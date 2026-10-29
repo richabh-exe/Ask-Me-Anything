@@ -1,0 +1,348 @@
+"use client";
+
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useId, useRef, useState } from "react";
+import { StoryCanvas } from "@/components/story/StoryCanvas";
+import { useShareCard } from "@/components/story/useShareCard";
+import { Button, ButtonLink } from "@/components/ui/Button";
+import { IconCheck, IconCopy, IconShare, IconX } from "@/components/ui/Icons";
+import { Segmented } from "@/components/ui/Segmented";
+import { useToast } from "@/components/ui/Toast";
+import { ageFrom, MIN_AGE } from "@/lib/age";
+import { checkHandle, cleanHandle } from "@/lib/handle";
+import { IDEAS } from "@/lib/ideas";
+import { FILTER_OPTIONS, MODE_OPTIONS } from "@/lib/options";
+import { createProfile } from "@/lib/poocho";
+import { copyText } from "@/lib/share";
+import { askPath, askUrl, displayHost } from "@/lib/site";
+import { useDB } from "@/lib/store";
+import { drawInviteCard } from "@/lib/story-card";
+import type { FilterLevel, LinkMode } from "@/lib/types";
+
+const STEPS = ["Age", "Link", "Questions", "Share"] as const;
+
+export function StartFlow() {
+  const params = useSearchParams();
+  const db = useDB();
+  const reduce = useReducedMotion();
+  const toast = useToast();
+  const shareCard = useShareCard();
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  const [step, setStep] = useState(0);
+  const [dob, setDob] = useState("");
+  const [tooYoung, setTooYoung] = useState(false);
+  const [name, setName] = useState("");
+  const [handleInput, setHandleInput] = useState(() => cleanHandle(params.get("handle") ?? ""));
+  const [prompt, setPrompt] = useState("Ask me anything!");
+  const [mode, setMode] = useState<LinkMode>("anonymous");
+  const [filterLevel, setFilterLevel] = useState<FilterLevel>("standard");
+  const [replace, setReplace] = useState(false);
+  const [error, setError] = useState("");
+  const ids = { dob: useId(), name: useId(), handle: useId(), prompt: useId(), status: useId(), error: useId() };
+
+  const existing = db?.profile ?? null;
+  const created = step === 3 ? existing : null;
+  const handle = cleanHandle(handleInput);
+  const check = checkHandle(handleInput);
+
+  const go = (next: number) => {
+    setError("");
+    setStep(next);
+    requestAnimationFrame(() => headingRef.current?.focus());
+  };
+
+  const submitAge = () => {
+    const age = ageFrom(dob);
+    if (age === null) return setError("Enter your date of birth.");
+    if (age < MIN_AGE) {
+      // PRD US-1: under 18 means no account and nothing kept.
+      setDob("");
+      setTooYoung(true);
+      return;
+    }
+    go(1);
+  };
+
+  const submitLink = () => {
+    if (!name.trim()) return setError("Add the name people will see on your page.");
+    if (!check.ok) return setError(check.reason === "invalid" ? "Use 3–20 letters, numbers or underscores." : `@${handle} isn't available. Try another.`);
+    go(2);
+  };
+
+  const submitQuestions = () => {
+    if (existing && existing.handle !== handle && !replace) {
+      return setError(`Tick the box to replace @${existing.handle} on this device.`);
+    }
+    try {
+      createProfile({ handle, displayName: name, prompt, mode, filterLevel });
+      go(3);
+    } catch {
+      setError(`@${handle} isn't available. Go back and pick another link.`);
+    }
+  };
+
+  if (tooYoung) {
+    return (
+      <Card>
+        <h1 tabIndex={-1} className="text-[2rem] leading-tight font-extrabold stretch-wide focus:outline-none">
+          Poocho is for people 18 and over
+        </h1>
+        <p className="mt-4 text-[1.1rem]">
+          We can&apos;t create a link for you yet. Nothing you entered has been saved.
+        </p>
+        <ButtonLink href="/" variant="paper" className="mt-6">
+          Back to home
+        </ButtonLink>
+      </Card>
+    );
+  }
+
+  const enter = reduce ? { opacity: 0 } : { opacity: 0, x: 48, rotate: 1.5 };
+  const exit = reduce ? { opacity: 0 } : { opacity: 0, x: -48, rotate: -1.5 };
+
+  return (
+    <div>
+      <ol aria-label="Steps" className="mb-8 flex items-center gap-2">
+        {STEPS.map((label, i) => (
+          <li key={label} className="flex items-center gap-2" aria-current={i === step ? "step" : undefined}>
+            <span
+              className={`grid h-9 w-9 place-items-center rounded-full border-2 border-navy font-hand text-[1.1rem] font-bold transition-colors ${
+                i < step ? "bg-ink text-white" : i === step ? "bg-haldi" : "bg-white"
+              }`}
+            >
+              {i < step ? <IconCheck className="h-4 w-4" /> : i + 1}
+            </span>
+            <span className={`hidden text-[0.95rem] sm:inline ${i === step ? "font-semibold" : "text-navy-soft"}`}>{label}</span>
+            {i < STEPS.length - 1 && <span aria-hidden="true" className="h-0.5 w-4 bg-navy/25 sm:w-8" />}
+          </li>
+        ))}
+      </ol>
+
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={step}
+          initial={enter}
+          animate={{ opacity: 1, x: 0, rotate: 0 }}
+          exit={exit}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        >
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (step === 0) submitAge();
+              else if (step === 1) submitLink();
+              else if (step === 2) submitQuestions();
+            }}
+          >
+            <Card>
+              {step === 0 && (
+                <>
+                  <Heading refEl={headingRef}>First, how old are you?</Heading>
+                  <p className="mt-3 text-navy-soft">
+                    Poocho is 18+ for hosts and askers. We only keep the fact that you passed this check, never your birthday.
+                  </p>
+                  <label htmlFor={ids.dob} className="mt-7 block font-semibold">
+                    Date of birth
+                  </label>
+                  <input
+                    id={ids.dob}
+                    type="date"
+                    value={dob}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setDob(e.target.value)}
+                    aria-describedby={error ? ids.error : undefined}
+                    className="field mt-2"
+                  />
+                </>
+              )}
+
+              {step === 1 && (
+                <>
+                  <Heading refEl={headingRef}>Pick your link</Heading>
+                  <p className="mt-3 text-navy-soft">This is what you&apos;ll post on your story and in your bio.</p>
+                  <label htmlFor={ids.name} className="mt-7 block font-semibold">
+                    Your name
+                  </label>
+                  <input
+                    id={ids.name}
+                    value={name}
+                    onChange={(e) => setName(e.target.value.slice(0, 40))}
+                    autoComplete="name"
+                    placeholder="Ananya Verma"
+                    className="field mt-2"
+                  />
+                  <label htmlFor={ids.handle} className="mt-6 block font-semibold">
+                    Your link
+                  </label>
+                  <div className="mt-2 flex h-12 items-center rounded-[10px] border-2 border-navy bg-white text-[1.05rem] focus-within:outline-3 focus-within:outline-offset-2 focus-within:outline-ink">
+                    <span className="shrink-0 pl-3 text-navy/50">{displayHost()}/@</span>
+                    <input
+                      id={ids.handle}
+                      value={handleInput}
+                      onChange={(e) => setHandleInput(e.target.value.slice(0, 24))}
+                      autoCapitalize="none"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-describedby={ids.status}
+                      className="h-full min-w-0 flex-1 bg-transparent pr-3 text-ink focus:outline-none"
+                      placeholder="yourname"
+                    />
+                  </div>
+                  <p id={ids.status} aria-live="polite" className="mt-2 min-h-6 text-[0.95rem]">
+                    {handle &&
+                      (check.ok ? (
+                        <span className="inline-flex items-center gap-1.5 text-leaf">
+                          <IconCheck /> @{handle} is free
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-margin-deep">
+                          <IconX />
+                          {check.reason === "invalid" ? "Use 3–20 letters, numbers or underscores" : `@${handle} isn't available`}
+                        </span>
+                      ))}
+                  </p>
+                </>
+              )}
+
+              {step === 2 && (
+                <>
+                  <Heading refEl={headingRef}>What should people ask you about?</Heading>
+                  <label htmlFor={ids.prompt} className="mt-6 block font-semibold">
+                    Your prompt
+                  </label>
+                  <div className="paper-shadow mt-2">
+                    <div className="torn margin-line rounded-[4px] bg-white px-4 pt-4 pb-1 [--margin-x:1.4rem]">
+                      <textarea
+                        id={ids.prompt}
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value.slice(0, 80))}
+                        rows={2}
+                        className="ruled block w-full resize-none bg-transparent pl-5 font-hand text-[1.5rem] leading-[2.25rem] font-bold text-ink focus:outline-none [--line:2.25rem]"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[12px] border-2 border-dashed border-navy/30 p-3">
+                    <p className="text-[0.9rem] font-semibold text-navy-soft">Ideas from Poocho</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {IDEAS.slice(0, 6).map((idea) => (
+                        <button
+                          key={idea.en}
+                          type="button"
+                          onClick={() => setPrompt(idea.en)}
+                          className="rounded-full border-2 border-navy/20 bg-white px-3 py-1 text-[0.92rem] hover:border-navy"
+                        >
+                          {idea.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-7 grid gap-6">
+                    <Segmented label="Who can ask" options={MODE_OPTIONS} value={mode} onChange={setMode} name="mode" />
+                    <Segmented label="Filter strictness" options={FILTER_OPTIONS} value={filterLevel} onChange={setFilterLevel} name="filter" />
+                  </div>
+                  {existing && existing.handle !== handle && (
+                    <label className="mt-7 flex items-start gap-3 rounded-[12px] bg-haldi-soft p-3 text-[0.98rem]">
+                      <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} className="mt-1 h-5 w-5 accent-[#2940D9]" />
+                      <span>
+                        This device already has <strong>@{existing.handle}</strong>. Replace it, and delete its questions, with @{handle}.
+                      </span>
+                    </label>
+                  )}
+                </>
+              )}
+
+              {step === 3 && created && (
+                <>
+                  <Heading refEl={headingRef}>Your link is ready</Heading>
+                  <p className="mt-3 text-navy-soft">
+                    Share this card on your story, then add a Link sticker with your link so people can tap through.
+                  </p>
+                  <div className="mt-6 grid items-start gap-6 sm:grid-cols-[200px_1fr]">
+                    <div className="mx-auto w-[200px] overflow-hidden rounded-[12px] border-2 border-navy">
+                      <StoryCanvas
+                        kind="invite"
+                        resolution={0.4}
+                        label={`Story card: ${created.prompt}, ${displayHost()}/@${created.handle}`}
+                        content={{ prompt: created.prompt, handle: created.handle, host: displayHost() }}
+                      />
+                    </div>
+                    <div className="grid content-start gap-3">
+                      <p className="rounded-[10px] bg-paper-dim px-3 py-2 font-semibold break-all text-ink">
+                        {displayHost()}/@{created.handle}
+                      </p>
+                      <Button
+                        variant="ink"
+                        onClick={() =>
+                          void shareCard(
+                            (ctx) => drawInviteCard(ctx, { prompt: created.prompt, handle: created.handle, host: displayHost() }),
+                            `poocho-${created.handle}.png`,
+                            askUrl(created.handle),
+                          )
+                        }
+                      >
+                        <IconShare /> Share to story
+                      </Button>
+                      <Button
+                        variant="paper"
+                        onClick={async () => toast((await copyText(askUrl(created.handle))) ? "Link copied." : "Copy failed. Select the link and copy it.")}
+                      >
+                        <IconCopy /> Copy link
+                      </Button>
+                      <ButtonLink href="/inbox" variant="haldi">
+                        Open my inbox
+                      </ButtonLink>
+                      <Link href={askPath(created.handle)} className="mt-1 w-fit font-semibold text-ink underline underline-offset-4">
+                        See my ask page
+                      </Link>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {error && (
+                <p id={ids.error} role="alert" className="mt-5 rounded-[10px] border-2 border-margin bg-[#fde3e8] px-3 py-2 font-medium">
+                  {error}
+                </p>
+              )}
+
+              {step < 3 && (
+                <div className="mt-8 flex items-center justify-between gap-3">
+                  {step > 0 ? (
+                    <button type="button" onClick={() => go(step - 1)} className="font-semibold underline underline-offset-4">
+                      Back
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <Button type="submit" size="lg">
+                    {step === 2 ? "Create my link" : "Continue"}
+                  </Button>
+                </div>
+              )}
+            </Card>
+          </form>
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="paper-shadow">
+      <div className="torn rounded-[6px] bg-white px-5 pt-9 pb-7 sm:px-9">{children}</div>
+    </div>
+  );
+}
+
+function Heading({ children, refEl }: { children: React.ReactNode; refEl: React.RefObject<HTMLHeadingElement | null> }) {
+  return (
+    <h1 ref={refEl} tabIndex={-1} className="text-[clamp(1.8rem,5vw,2.4rem)] leading-tight font-extrabold tracking-[-0.02em] stretch-wide focus:outline-none">
+      {children}
+    </h1>
+  );
+}
