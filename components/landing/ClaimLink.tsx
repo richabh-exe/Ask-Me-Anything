@@ -6,11 +6,14 @@ import { useEffect, useId, useState } from "react";
 import { handleStatusAction } from "@/app/actions";
 import { Button } from "@/components/ui/Button";
 import { IconCheck, IconX } from "@/components/ui/Icons";
+import { UrlText } from "@/components/ui/UrlText";
 import { checkHandle, cleanHandle } from "@/lib/handle";
+import { useSiteHost } from "@/lib/client/useSiteHost";
 import { useI18n } from "@/lib/i18n";
 
 export function ClaimLink() {
   const { t } = useI18n();
+  const host = useSiteHost();
   const router = useRouter();
   const reduce = useReducedMotion();
   const [value, setValue] = useState("");
@@ -81,20 +84,26 @@ export function ClaimLink() {
             {t("claim.label")}
           </label>
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end">
-            <div className="flex min-w-0 flex-1 items-baseline border-b-[3px] border-navy pb-2 text-[clamp(1.6rem,5vw,3.4rem)] leading-none font-bold stretch-semi">
-              <span className="shrink-0 text-navy/45">poocho.app/@</span>
-              <input
-                id={inputId}
-                value={value}
-                onChange={(e) => setValue(e.target.value.slice(0, 24))}
-                placeholder="yourname"
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                aria-describedby={statusId}
-                aria-invalid={status === "invalid" || status === "reserved"}
-                className="w-full min-w-0 bg-transparent text-ink placeholder:text-navy/20 focus:outline-none focus-visible:outline-none"
-              />
+            {/* The host sits on its own line so a long domain never squeezes the handle. */}
+            <div className="min-w-0 flex-1">
+              <p className="text-[clamp(1.05rem,2vw,1.35rem)] font-semibold text-navy/45 stretch-semi">
+                <UrlText url={`${host}/`} />
+              </p>
+              <div className="mt-1 flex items-baseline border-b-[3px] border-navy pb-2 text-[clamp(1.6rem,5vw,3.4rem)] leading-none font-bold stretch-semi">
+                <span className="shrink-0 text-navy/45">@</span>
+                <input
+                  id={inputId}
+                  value={value}
+                  onChange={(e) => setValue(e.target.value.slice(0, 24))}
+                  placeholder="yourname"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-describedby={statusId}
+                  aria-invalid={status === "invalid" || status === "reserved"}
+                  className="w-full min-w-0 bg-transparent text-ink placeholder:text-navy/20 focus:outline-none focus-visible:outline-none"
+                />
+              </div>
             </div>
             <Button type="submit" variant="ink" size="lg" disabled={status !== "free" && status !== "mine"} className="w-full lg:w-auto">
               {status === "mine" ? t("claim.open") : t("claim.cta", { h: handle || "you" })}

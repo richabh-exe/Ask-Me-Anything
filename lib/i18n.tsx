@@ -40,7 +40,7 @@ const en = {
 
   "how.title": "How Poocho works",
   "how.1.title": "Share your link",
-  "how.1.body": "Post poocho.app/@you on your Instagram story, WhatsApp status or bio.",
+  "how.1.body": "Post {link} on your Instagram story, WhatsApp status or bio.",
   "how.2.title": "People ask, no name needed",
   "how.2.body": "Followers type a question. You decide whether names stay hidden, are shown, or are up to them.",
   "how.3.title": "Poocho filters first",
@@ -158,7 +158,7 @@ const hi: Record<MessageKey, string> = {
 
   "how.title": "Poocho कैसे काम करता है",
   "how.1.title": "अपना लिंक शेयर कीजिए",
-  "how.1.body": "poocho.app/@you को अपनी इंस्टाग्राम स्टोरी, व्हाट्सऐप स्टेटस या बायो में डालिए।",
+  "how.1.body": "{link} को अपनी इंस्टाग्राम स्टोरी, व्हाट्सऐप स्टेटस या बायो में डालिए।",
   "how.2.title": "लोग पूछें, नाम ज़रूरी नहीं",
   "how.2.body": "फ़ॉलोअर्स सवाल लिखें। नाम छिपे, दिखे या उनकी मर्ज़ी पर रहे, यह आप तय कीजिए।",
   "how.3.title": "Poocho पहले छाँटता है",
