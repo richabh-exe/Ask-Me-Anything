@@ -7,7 +7,8 @@ import { useShareCard } from "@/components/story/useShareCard";
 import { Button } from "@/components/ui/Button";
 import { IconDownload, IconShare, IconTrash, IconX } from "@/components/ui/Icons";
 import { useToast } from "@/components/ui/Toast";
-import { answerQuestion, deleteQuestion, MAX_ANSWER, moveQuestion } from "@/lib/poocho";
+import { useInboxOps } from "@/components/inbox/ops";
+import { MAX_ANSWER } from "@/lib/limits";
 import { downloadBlob } from "@/lib/share";
 import { askUrl, displayHost } from "@/lib/site";
 import { drawAnswerCard, renderToBlob, TEMPLATES, type CardContent } from "@/lib/story-card";
@@ -25,6 +26,7 @@ export function Composer({ question, profile, onClose }: { question: Question; p
   const toast = useToast();
   const shareCard = useShareCard();
   const now = useNow();
+  const ops = useInboxOps();
   const panelRef = useRef<HTMLDivElement>(null);
   const answerRef = useRef<HTMLTextAreaElement>(null);
   const [answer, setAnswer] = useState(question.answer?.body ?? "");
@@ -77,9 +79,7 @@ export function Composer({ question, profile, onClose }: { question: Question; p
     };
   }, [onClose, reduce]);
 
-  const save = () => {
-    answerQuestion(question.id, { body: answer, template, isPublic });
-  };
+  const save = () => ops.answer(question.id, { body: answer, template, isPublic });
 
   const requireAnswer = () => {
     if (answer.trim()) return true;
@@ -191,9 +191,8 @@ export function Composer({ question, profile, onClose }: { question: Question; p
                   type="button"
                   className="font-semibold underline underline-offset-4"
                   onClick={() => {
-                    moveQuestion(question.id, "filtered");
-                    toast("Moved to Filtered.");
                     onClose();
+                    void ops.move(question.id, "filtered").then(() => toast("Moved to Filtered."));
                   }}
                 >
                   Move to Filtered
@@ -203,9 +202,8 @@ export function Composer({ question, profile, onClose }: { question: Question; p
                 type="button"
                 className="inline-flex items-center gap-1.5 font-semibold text-margin-deep underline underline-offset-4"
                 onClick={() => {
-                  deleteQuestion(question.id);
-                  toast("Question deleted.");
                   onClose();
+                  void ops.remove(question.id).then(() => toast("Question deleted."));
                 }}
               >
                 <IconTrash className="h-4 w-4" /> Delete question
@@ -224,7 +222,7 @@ export function Composer({ question, profile, onClose }: { question: Question; p
                 onClick={async () => {
                   if (!requireAnswer()) return;
                   setWorking(true);
-                  save();
+                  void save();
                   await shareCard((ctx) => drawAnswerCard(ctx, content), `poocho-${profile.handle}-answer.png`, askUrl(profile.handle));
                   setWorking(false);
                 }}
@@ -237,7 +235,7 @@ export function Composer({ question, profile, onClose }: { question: Question; p
                 onClick={async () => {
                   if (!requireAnswer()) return;
                   setWorking(true);
-                  save();
+                  void save();
                   try {
                     downloadBlob(await renderToBlob((ctx) => drawAnswerCard(ctx, content)), `poocho-${profile.handle}-answer.png`);
                     toast("Image saved.", "success");
@@ -251,9 +249,12 @@ export function Composer({ question, profile, onClose }: { question: Question; p
               </Button>
               <Button
                 variant="haldi"
-                onClick={() => {
+                onClick={async () => {
                   if (!requireAnswer()) return;
-                  save();
+                  setWorking(true);
+                  const saved = await save();
+                  setWorking(false);
+                  if (!saved) return toast("Your answer didn't save. Try again.", "warn");
                   toast(isPublic ? `Answer saved and shown on @${profile.handle}.` : "Answer saved. Only you can see it.", "success");
                   onClose();
                 }}

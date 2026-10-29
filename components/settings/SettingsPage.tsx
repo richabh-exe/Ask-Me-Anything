@@ -1,7 +1,7 @@
 "use client";
 
+import { useClerk } from "@clerk/nextjs";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { IconArrowLeft, IconX } from "@/components/ui/Icons";
@@ -10,17 +10,29 @@ import { useToast } from "@/components/ui/Toast";
 import { exportCSV, exportJSON } from "@/lib/export";
 import { normalise } from "@/lib/moderation";
 import { FILTER_OPTIONS, MODE_OPTIONS } from "@/lib/options";
-import { deleteEverything, updateProfile } from "@/lib/poocho";
+import { deleteAccountAction } from "@/app/actions";
+import { InboxOpsProvider, useCreateInboxOps, useInboxOps } from "@/components/inbox/ops";
+import { useInbox } from "@/lib/client/useInbox";
 import { downloadBlob } from "@/lib/share";
-import { useDB } from "@/lib/store";
-import type { Profile } from "@/lib/types";
+import type { InboxData, Profile } from "@/lib/types";
 
 export function SettingsPage() {
-  const db = useDB();
-  if (db === null) return <div className="h-[60vh] animate-pulse rounded-[12px] bg-white/60" />;
-  if (!db.profile) {
+  const { state, refresh, update } = useInbox({ poll: false });
+  const ops = useCreateInboxOps(update, refresh);
+  if (state.status === "loading") return <div className="h-[60vh] animate-pulse rounded-[12px] bg-white/60" />;
+  if (state.status !== "ready") {
     return (
-      <Section title="No link on this device">
+      <Section title="Settings didn't load">
+        <p className="text-navy-soft">{state.status === "error" ? state.message : "Sign in to change your settings."}</p>
+        <ButtonLink href={state.status === "signed-out" ? "/sign-in" : "/settings"} className="mt-5">
+          {state.status === "signed-out" ? "Sign in" : "Try again"}
+        </ButtonLink>
+      </Section>
+    );
+  }
+  if (!state.data.profile) {
+    return (
+      <Section title="You don&apos;t have a link yet">
         <p className="text-navy-soft">Create a link first, then you can change how it works here.</p>
         <ButtonLink href="/start" className="mt-5">
           Get your link
@@ -28,13 +40,19 @@ export function SettingsPage() {
       </Section>
     );
   }
-  return <Settings profile={db.profile} />;
+  return (
+    <InboxOpsProvider ops={ops}>
+      <Settings profile={state.data.profile} data={state.data} />
+    </InboxOpsProvider>
+  );
 }
 
-function Settings({ profile }: { profile: Profile }) {
-  const db = useDB();
+function Settings({ profile, data }: { profile: Profile; data: InboxData }) {
   const toast = useToast();
-  const router = useRouter();
+  const ops = useInboxOps();
+  const { signOut } = useClerk();
+  const [deleting, setDeleting] = useState(false);
+  const updateProfile = (patch: Parameters<typeof ops.patchProfile>[0]) => void ops.patchProfile(patch);
   const [word, setWord] = useState("");
   const [confirm, setConfirm] = useState("");
   const ids = { name: useId(), prompt: useId(), word: useId(), confirm: useId(), pause: useId() };
@@ -161,10 +179,10 @@ function Settings({ profile }: { profile: Profile }) {
       <Section title="Your data">
         <p className="text-navy-soft">Download everything: your settings, every question and every answer.</p>
         <div className="mt-4 flex flex-wrap gap-3">
-          <Button variant="paper" onClick={() => db && downloadBlob(exportJSON(db), `poocho-${profile.handle}.json`)}>
+          <Button variant="paper" onClick={() => downloadBlob(exportJSON(data), `poocho-${profile.handle}.json`)}>
             Export JSON
           </Button>
-          <Button variant="paper" onClick={() => db && downloadBlob(exportCSV(db), `poocho-${profile.handle}.csv`)}>
+          <Button variant="paper" onClick={() => downloadBlob(exportCSV(data), `poocho-${profile.handle}.csv`)}>
             Export CSV
           </Button>
         </div>
@@ -172,7 +190,7 @@ function Settings({ profile }: { profile: Profile }) {
         <div className="mt-8 rounded-[14px] border-2 border-margin p-4">
           <p className="font-semibold">Delete everything</p>
           <p className="mt-1 text-[0.95rem] text-navy-soft">
-            This removes @{profile.handle}, its questions and answers from this device. It can&apos;t be undone.
+            This deletes your account, @{profile.handle}, and every question and answer. It can&apos;t be undone.
           </p>
           <label htmlFor={ids.confirm} className="mt-4 block text-[0.95rem] font-medium">
             Type <strong>{profile.handle}</strong> to confirm
@@ -187,14 +205,20 @@ function Settings({ profile }: { profile: Profile }) {
             />
             <Button
               variant="danger"
-              disabled={confirm.trim().replace(/^@/, "") !== profile.handle}
-              onClick={() => {
-                deleteEverything();
-                toast("Everything was deleted.");
-                router.push("/");
+              disabled={deleting || confirm.trim().replace(/^@/, "") !== profile.handle}
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await deleteAccountAction();
+                  toast("Your account and everything in it were deleted.");
+                  await signOut({ redirectUrl: "/" });
+                } catch {
+                  setDeleting(false);
+                  toast("Your account wasn't deleted. Try again.", "warn");
+                }
               }}
             >
-              Delete everything
+              {deleting ? "Deleting…" : "Delete everything"}
             </Button>
           </div>
         </div>

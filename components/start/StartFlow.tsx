@@ -3,7 +3,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useId, useRef, useState } from "react";
+import { SignIn, useAuth, useUser } from "@clerk/nextjs";
+import { Suspense, useId, useRef, useState, useSyncExternalStore } from "react";
+import { createProfileAction, handleStatusAction } from "@/app/actions";
 import { StoryCanvas } from "@/components/story/StoryCanvas";
 import { useShareCard } from "@/components/story/useShareCard";
 import { Button, ButtonLink } from "@/components/ui/Button";
@@ -14,39 +16,77 @@ import { ageFrom, MIN_AGE } from "@/lib/age";
 import { checkHandle, cleanHandle } from "@/lib/handle";
 import { IDEAS } from "@/lib/ideas";
 import { FILTER_OPTIONS, MODE_OPTIONS } from "@/lib/options";
-import { createProfile } from "@/lib/poocho";
 import { copyText } from "@/lib/share";
 import { askPath, askUrl, displayHost } from "@/lib/site";
-import { useDB } from "@/lib/store";
+import { useInbox } from "@/lib/client/useInbox";
 import { drawInviteCard } from "@/lib/story-card";
-import type { FilterLevel, LinkMode } from "@/lib/types";
+import type { FilterLevel, LinkMode, Profile } from "@/lib/types";
 
-const STEPS = ["Age", "Link", "Questions", "Share"] as const;
+const STEPS = ["Age", "Account", "Link", "Questions", "Share"] as const;
+const AGE_KEY = "poocho:age-ok";
+const AGE_TTL_MS = 24 * 60 * 60 * 1000;
+
+/*
+ * The age check survives the sign-in round trip (Google redirects away, and a
+ * magic link can open in a new tab), so only the fact that it passed is kept
+ * in this browser for a day. The date of birth itself is never stored.
+ */
+function ageCheckPassed(): boolean {
+  try {
+    const at = Number(window.localStorage.getItem(AGE_KEY));
+    return Number.isFinite(at) && Date.now() - at < AGE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+const noSubscribe = () => () => {};
+
+function rememberAgeCheck(passed: boolean) {
+  try {
+    if (passed) window.localStorage.setItem(AGE_KEY, String(Date.now()));
+    else window.localStorage.removeItem(AGE_KEY);
+  } catch {
+    /* storage blocked: the visitor just repeats the check */
+  }
+}
 
 export function StartFlow() {
   const params = useSearchParams();
-  const db = useDB();
+  const { isLoaded, isSignedIn } = useAuth();
+  const { user } = useUser();
+  const { state: inbox } = useInbox({ poll: false });
   const reduce = useReducedMotion();
   const toast = useToast();
   const shareCard = useShareCard();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const [step, setStep] = useState(0);
+  // The step the host chose. The step shown can run ahead of it: see `step` below.
+  const [chosen, setStep] = useState(0);
   const [dob, setDob] = useState("");
   const [tooYoung, setTooYoung] = useState(false);
-  const [name, setName] = useState("");
+  // null until the host types, so the name from their Google or Clerk profile can fill in first.
+  const [name, setName] = useState<string | null>(null);
   const [handleInput, setHandleInput] = useState(() => cleanHandle(params.get("handle") ?? ""));
   const [prompt, setPrompt] = useState("Ask me anything!");
   const [mode, setMode] = useState<LinkMode>("anonymous");
   const [filterLevel, setFilterLevel] = useState<FilterLevel>("standard");
-  const [replace, setReplace] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<Profile | null>(null);
   const [error, setError] = useState("");
   const ids = { dob: useId(), name: useId(), handle: useId(), prompt: useId(), status: useId(), error: useId() };
 
-  const existing = db?.profile ?? null;
-  const created = step === 3 ? existing : null;
+  const existing = inbox.status === "ready" ? inbox.data.profile : null;
   const handle = cleanHandle(handleInput);
   const check = checkHandle(handleInput);
+
+  // Coming back from sign-in with the age check already passed skips ahead.
+  const agePassed = useSyncExternalStore(noSubscribe, ageCheckPassed, () => false);
+  let step = chosen;
+  if (step === 0 && agePassed && isLoaded) step = isSignedIn ? 2 : 1;
+  if (step === 1 && isSignedIn) step = 2;
+
+  const suggestedName = user?.fullName || user?.firstName || "";
 
   const go = (next: number) => {
     setError("");
@@ -60,27 +100,49 @@ export function StartFlow() {
     if (age < MIN_AGE) {
       // PRD US-1: under 18 means no account and nothing kept.
       setDob("");
+      rememberAgeCheck(false);
       setTooYoung(true);
       return;
     }
-    go(1);
+    rememberAgeCheck(true);
+    go(isSignedIn ? 2 : 1);
   };
 
-  const submitLink = () => {
-    if (!name.trim()) return setError("Add the name people will see on your page.");
+  const displayName = name ?? suggestedName;
+
+  const submitLink = async () => {
+    if (!displayName.trim()) return setError("Add the name people will see on your page.");
     if (!check.ok) return setError(check.reason === "invalid" ? "Use 3–20 letters, numbers or underscores." : `@${handle} isn't available. Try another.`);
-    go(2);
-  };
-
-  const submitQuestions = () => {
-    if (existing && existing.handle !== handle && !replace) {
-      return setError(`Tick the box to replace @${existing.handle} on this device.`);
-    }
+    setBusy(true);
     try {
-      createProfile({ handle, displayName: name, prompt, mode, filterLevel });
+      const status = await handleStatusAction(handle);
+      if (status === "taken") return setError(`@${handle} is taken. Try another.`);
+      if (status !== "free") return setError(`@${handle} isn't available. Try another.`);
       go(3);
     } catch {
-      setError(`@${handle} isn't available. Go back and pick another link.`);
+      setError("We couldn't check that link. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitQuestions = async () => {
+    setBusy(true);
+    try {
+      const result = await createProfileAction({ handle, displayName, prompt, mode, filterLevel });
+      if (result.ok) {
+        rememberAgeCheck(false);
+        setCreated(result.profile);
+        go(4);
+      } else if (result.reason === "exists") {
+        setError("This account already has a link. Open your inbox to use it.");
+      } else {
+        setError(`@${handle} was just taken. Go back and pick another link.`);
+      }
+    } catch {
+      setError("Your link wasn't created. Check your connection and try again.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -96,6 +158,23 @@ export function StartFlow() {
         <ButtonLink href="/" variant="paper" className="mt-6">
           Back to home
         </ButtonLink>
+      </Card>
+    );
+  }
+
+  if (existing && !created) {
+    return (
+      <Card>
+        <h1 className="text-[2rem] leading-tight font-extrabold stretch-wide">You already have a link</h1>
+        <p className="mt-4 text-[1.1rem]">
+          Your account owns <strong>{displayHost()}/@{existing.handle}</strong>. Each account has one link.
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <ButtonLink href="/inbox">Open my inbox</ButtonLink>
+          <ButtonLink href={askPath(existing.handle)} variant="paper">
+            See my ask page
+          </ButtonLink>
+        </div>
       </Card>
     );
   }
@@ -129,13 +208,37 @@ export function StartFlow() {
           exit={exit}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
+          {step === 1 ? (
+            <Card>
+              <Heading refEl={headingRef}>Create your account</Heading>
+              <p className="mt-3 text-navy-soft">
+                So only you can open your inbox. Use Google, or get a one-time link by email. There&apos;s no password.
+              </p>
+              <div className="mt-6">
+                <Suspense fallback={<div className="h-[380px] animate-pulse rounded-[16px] bg-paper-dim" />}>
+                  <SignIn routing="hash" withSignUp forceRedirectUrl="/start" signUpForceRedirectUrl="/start" />
+                </Suspense>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  rememberAgeCheck(false);
+                  go(0);
+                }}
+                className="mt-6 font-semibold underline underline-offset-4"
+              >
+                Back
+              </button>
+            </Card>
+          ) : (
           <form
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
+              if (busy) return;
               if (step === 0) submitAge();
-              else if (step === 1) submitLink();
-              else if (step === 2) submitQuestions();
+              else if (step === 2) void submitLink();
+              else if (step === 3) void submitQuestions();
             }}
           >
             <Card>
@@ -160,7 +263,7 @@ export function StartFlow() {
                 </>
               )}
 
-              {step === 1 && (
+              {step === 2 && (
                 <>
                   <Heading refEl={headingRef}>Pick your link</Heading>
                   <p className="mt-3 text-navy-soft">This is what you&apos;ll post on your story and in your bio.</p>
@@ -169,7 +272,7 @@ export function StartFlow() {
                   </label>
                   <input
                     id={ids.name}
-                    value={name}
+                    value={displayName}
                     onChange={(e) => setName(e.target.value.slice(0, 40))}
                     autoComplete="name"
                     placeholder="Ananya Verma"
@@ -195,8 +298,8 @@ export function StartFlow() {
                   <p id={ids.status} aria-live="polite" className="mt-2 min-h-6 text-[0.95rem]">
                     {handle &&
                       (check.ok ? (
-                        <span className="inline-flex items-center gap-1.5 text-leaf">
-                          <IconCheck /> @{handle} is free
+                        <span className="inline-flex items-center gap-1.5 text-navy-soft">
+                          <IconCheck /> {displayHost()}/@{handle}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-margin-deep">
@@ -208,7 +311,7 @@ export function StartFlow() {
                 </>
               )}
 
-              {step === 2 && (
+              {step === 3 && (
                 <>
                   <Heading refEl={headingRef}>What should people ask you about?</Heading>
                   <label htmlFor={ids.prompt} className="mt-6 block font-semibold">
@@ -244,18 +347,10 @@ export function StartFlow() {
                     <Segmented label="Who can ask" options={MODE_OPTIONS} value={mode} onChange={setMode} name="mode" />
                     <Segmented label="Filter strictness" options={FILTER_OPTIONS} value={filterLevel} onChange={setFilterLevel} name="filter" />
                   </div>
-                  {existing && existing.handle !== handle && (
-                    <label className="mt-7 flex items-start gap-3 rounded-[12px] bg-haldi-soft p-3 text-[0.98rem]">
-                      <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} className="mt-1 h-5 w-5 accent-[#2940D9]" />
-                      <span>
-                        This device already has <strong>@{existing.handle}</strong>. Replace it, and delete its questions, with @{handle}.
-                      </span>
-                    </label>
-                  )}
                 </>
               )}
 
-              {step === 3 && created && (
+              {step === 4 && created && (
                 <>
                   <Heading refEl={headingRef}>Your link is ready</Heading>
                   <p className="mt-3 text-navy-soft">
@@ -309,22 +404,23 @@ export function StartFlow() {
                 </p>
               )}
 
-              {step < 3 && (
+              {step < 4 && (
                 <div className="mt-8 flex items-center justify-between gap-3">
-                  {step > 0 ? (
-                    <button type="button" onClick={() => go(step - 1)} className="font-semibold underline underline-offset-4">
+                  {step === 3 ? (
+                    <button type="button" onClick={() => go(2)} className="font-semibold underline underline-offset-4">
                       Back
                     </button>
                   ) : (
                     <span />
                   )}
-                  <Button type="submit" size="lg">
-                    {step === 2 ? "Create my link" : "Continue"}
+                  <Button type="submit" size="lg" disabled={busy}>
+                    {busy ? "One moment…" : step === 3 ? "Create my link" : "Continue"}
                   </Button>
                 </div>
               )}
             </Card>
           </form>
+          )}
         </motion.div>
       </AnimatePresence>
     </div>

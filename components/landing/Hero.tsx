@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRef } from "react";
 import { HeroDemo } from "@/components/landing/HeroDemo";
@@ -8,13 +9,12 @@ import { ButtonLink } from "@/components/ui/Button";
 import { IconCheck } from "@/components/ui/Icons";
 import { SiteNav } from "@/components/ui/SiteNav";
 import { useI18n } from "@/lib/i18n";
-import { useDB } from "@/lib/store";
 
 export function Hero() {
   const { t, locale } = useI18n();
   const deskRef = useRef<HTMLElement>(null);
-  const db = useDB();
-  const hasProfile = Boolean(db?.profile);
+  const { isSignedIn } = useAuth();
+  const hasProfile = Boolean(isSignedIn);
 
   return (
     <section ref={deskRef} className="desk relative overflow-hidden text-white">

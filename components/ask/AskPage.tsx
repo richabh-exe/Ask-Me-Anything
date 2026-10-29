@@ -11,31 +11,32 @@ import { SiteFooter } from "@/components/ui/SiteFooter";
 import { SiteNav } from "@/components/ui/SiteNav";
 import { useI18n } from "@/lib/i18n";
 import { hasPersonalInfo, moderate } from "@/lib/moderation";
-import { askQuestion, MAX_QUESTION, publicAnswers, type AskResult } from "@/lib/poocho";
-import { SAMPLE_ANSWERS, SAMPLE_PROFILE } from "@/lib/sample";
-import { useDB } from "@/lib/store";
+import { askQuestionAction } from "@/app/actions";
+import { MAX_QUESTION } from "@/lib/limits";
 import { timeAgo } from "@/lib/time";
 import { useNow } from "@/lib/useNow";
-import type { Profile, Question } from "@/lib/types";
+import type { PublicProfile, Question } from "@/lib/types";
 
-export function AskPage({ handle }: { handle: string }) {
-  const db = useDB();
+type AskResult = Awaited<ReturnType<typeof askQuestionAction>>;
+
+export type AskView =
+  | { kind: "sample"; profile: PublicProfile; answers: Question[] }
+  | { kind: "live"; profile: PublicProfile; answers: Question[]; own: boolean }
+  | { kind: "unclaimed"; handle: string };
+
+/** The ask page. The server loads the host and their public answers; this renders and sends. */
+export function AskPage({ view }: { view: AskView }) {
   const { t } = useI18n();
 
-  if (db === null) return <AskShell><div className="h-[520px] animate-pulse rounded-[6px] bg-white/15" /></AskShell>;
+  if (view.kind === "unclaimed") return <Unclaimed handle={view.handle} />;
 
-  const isSample = handle === "demo";
-  const own = db.profile?.handle === handle;
-  const profile = isSample ? SAMPLE_PROFILE : own ? db.profile : null;
-
-  if (!profile) return <Unclaimed handle={handle} />;
-
-  const answers = isSample ? SAMPLE_ANSWERS : publicAnswers(db.questions, handle);
+  const { profile, answers } = view;
+  const isSample = view.kind === "sample";
+  const own = view.kind === "live" && view.own;
+  const handle = profile.handle;
 
   return (
-    <AskShell
-      below={<AnswerFeed handle={handle} answers={answers} />}
-    >
+    <AskShell below={<AnswerFeed handle={handle} answers={answers} />}>
       {(isSample || own) && (
         <p className="mb-6 rounded-[10px] border-2 border-white/40 bg-white/10 px-4 py-3 text-[0.98rem] leading-snug text-white">
           {isSample ? t("ask.samplePage") : t("ask.ownPage")}{" "}
@@ -51,7 +52,7 @@ export function AskPage({ handle }: { handle: string }) {
   );
 }
 
-function AskShell({ children, below }: { children: React.ReactNode; below?: React.ReactNode }) {
+export function AskShell({ children, below }: { children: React.ReactNode; below?: React.ReactNode }) {
   return (
     <>
       <main id="main" className="flex-1">
@@ -71,7 +72,7 @@ type Status =
   | { kind: "sent"; support: boolean }
   | { kind: "error"; message: string };
 
-function AskForm({ profile, isSample, own }: { profile: Profile; isSample: boolean; own: boolean }) {
+function AskForm({ profile, isSample, own }: { profile: PublicProfile; isSample: boolean; own: boolean }) {
   const { t } = useI18n();
   const reduce = Boolean(useReducedMotion());
   const [scope, animate] = useAnimate<HTMLDivElement>();
@@ -109,20 +110,27 @@ function AskForm({ profile, isSample, own }: { profile: Profile; isSample: boole
       return;
     }
 
+    setBusy(true);
     let support = false;
     if (isSample) {
       support = moderate(text).supportCard;
     } else {
-      const result = askQuestion(h, text, { askerName: needsName ? name : undefined });
+      let result: AskResult;
+      try {
+        result = await askQuestionAction(h, text, needsName ? name : undefined);
+      } catch {
+        setStatus({ kind: "error", message: t("ask.failed") });
+        setBusy(false);
+        return;
+      }
       if (!result.ok) {
-        const message = errorFor(result);
-        if (message) setStatus({ kind: "error", message });
+        setStatus({ kind: "error", message: errorFor(result) || t("ask.failed") });
+        setBusy(false);
         return;
       }
       support = result.supportCard;
     }
 
-    setBusy(true);
     await foldAway(animate, chitRef.current, reduce);
     const box = scope.current.getBoundingClientRect();
     await flyBetween(animate, flyerRef.current, scope.current, chitRef.current, { x: box.width * 0.7, y: -260 }, reduce);

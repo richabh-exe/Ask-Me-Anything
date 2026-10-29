@@ -2,8 +2,9 @@
 
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { Composer } from "@/components/inbox/Composer";
+import { InboxOpsProvider, useCreateInboxOps, useInboxOps } from "@/components/inbox/ops";
 import { QuestionChit } from "@/components/inbox/QuestionChit";
 import { StoryCanvas } from "@/components/story/StoryCanvas";
 import { useShareCard } from "@/components/story/useShareCard";
@@ -12,10 +13,9 @@ import { IconCopy, IconEye, IconSettings, IconShare, IconTrash } from "@/compone
 import { useToast } from "@/components/ui/Toast";
 import { IDEAS } from "@/lib/ideas";
 import { CATEGORY_LABEL } from "@/lib/moderation";
-import { deleteQuestion, moveQuestion, purgeExpiredFiltered, setAnswerPublic, updateProfile } from "@/lib/poocho";
 import { copyText } from "@/lib/share";
 import { askPath, askUrl, displayHost } from "@/lib/site";
-import { useDB } from "@/lib/store";
+import { useInbox } from "@/lib/client/useInbox";
 import { drawAnswerCard, drawInviteCard } from "@/lib/story-card";
 import { timeAgo } from "@/lib/time";
 import { useNow } from "@/lib/useNow";
@@ -28,21 +28,37 @@ const TABS: { id: QuestionStatus; label: string }[] = [
 ];
 
 export function InboxPage() {
-  const db = useDB();
+  const { state, refresh, update } = useInbox();
+  const ops = useCreateInboxOps(update, refresh);
   const [tab, setTab] = useState<QuestionStatus>("new");
   const [openId, setOpenId] = useState<string | null>(null);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const baseId = useId();
 
-  useEffect(() => {
-    purgeExpiredFiltered();
-  }, []);
-
   const close = useCallback(() => setOpenId(null), []);
 
-  if (db === null) return <div className="h-[60vh] animate-pulse rounded-[12px] bg-white/60" />;
+  if (state.status === "loading") return <div className="h-[60vh] animate-pulse rounded-[12px] bg-white/60" />;
+  if (state.status === "error" || state.status === "signed-out") {
+    return (
+      <div className="rounded-[16px] border-2 border-navy bg-white p-6">
+        <h1 className="text-[1.6rem] font-bold stretch-semi">
+          {state.status === "signed-out" ? "Sign in to see your inbox" : "Your inbox didn't load"}
+        </h1>
+        <p className="mt-2 text-navy-soft">{state.status === "error" ? state.message : "Your questions are waiting."}</p>
+        {state.status === "signed-out" ? (
+          <ButtonLink href="/sign-in" className="mt-5">
+            Sign in
+          </ButtonLink>
+        ) : (
+          <Button className="mt-5" onClick={() => void refresh()}>
+            Try again
+          </Button>
+        )}
+      </div>
+    );
+  }
 
-  const profile = db.profile;
+  const { profile, questions } = state.data;
   if (!profile) {
     return (
       <div className="paper-shadow">
@@ -57,10 +73,9 @@ export function InboxPage() {
     );
   }
 
-  const mine = db.questions.filter((q) => q.handle === profile.handle);
-  const byStatus = (s: QuestionStatus) => mine.filter((q) => q.status === s);
+  const byStatus = (s: QuestionStatus) => questions.filter((q) => q.status === s);
   const lists = { new: byStatus("new"), answered: byStatus("answered"), filtered: byStatus("filtered") };
-  const open = openId ? mine.find((q) => q.id === openId && q.status !== "filtered") : undefined;
+  const open = openId ? questions.find((q) => q.id === openId && q.status !== "filtered") : undefined;
 
   const focusTab = (i: number) => {
     const next = (i + TABS.length) % TABS.length;
@@ -69,13 +84,14 @@ export function InboxPage() {
   };
 
   return (
+    <InboxOpsProvider ops={ops}>
     <LayoutGroup>
       <Header profile={profile} />
 
       {profile.paused && (
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-navy bg-haldi-soft px-4 py-3">
           <p className="font-medium">Your inbox is paused. Nobody can send you questions right now.</p>
-          <Button size="sm" variant="paper" onClick={() => updateProfile({ paused: false })}>
+          <Button size="sm" variant="paper" onClick={() => void ops.patchProfile({ paused: false })}>
             Resume inbox
           </Button>
         </div>
@@ -141,6 +157,7 @@ export function InboxPage() {
 
       <AnimatePresence>{open && <Composer key={open.id} question={open} profile={profile} onClose={close} />}</AnimatePresence>
     </LayoutGroup>
+    </InboxOpsProvider>
   );
 }
 
@@ -193,6 +210,7 @@ function Header({ profile }: { profile: Profile }) {
 
 function EmptyNew({ profile }: { profile: Profile }) {
   const toast = useToast();
+  const ops = useInboxOps();
   return (
     <div className="grid gap-8 md:grid-cols-[1fr_240px] md:items-start">
       <div>
@@ -220,7 +238,7 @@ function EmptyNew({ profile }: { profile: Profile }) {
                     type="button"
                     aria-pressed={current}
                     onClick={() => {
-                      updateProfile({ prompt: idea.en });
+                      void ops.patchProfile({ prompt: idea.en });
                       toast(`Your prompt is now “${idea.en}”.`, "success");
                     }}
                     className={`rounded-full border-2 px-3 py-1.5 text-[0.95rem] ${
@@ -251,6 +269,7 @@ function AnsweredList({ questions, profile, onEdit }: { questions: Question[]; p
   const shareCard = useShareCard();
   const reduce = useReducedMotion();
   const now = useNow();
+  const ops = useInboxOps();
   if (!questions.length) {
     return <p className="max-w-[48ch] text-navy-soft">Answers you write show up here, with a switch for whether each one appears on your page.</p>;
   }
@@ -275,7 +294,7 @@ function AnsweredList({ questions, profile, onEdit }: { questions: Question[]; p
                 <input
                   type="checkbox"
                   checked={Boolean(q.answer?.isPublic)}
-                  onChange={(e) => setAnswerPublic(q.id, e.target.checked)}
+                  onChange={(e) => void ops.setPublic(q.id, e.target.checked)}
                   className="h-5 w-5 accent-[#2940D9]"
                 />
                 On my page
@@ -321,6 +340,7 @@ function FilteredList({ questions }: { questions: Question[] }) {
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const reduce = useReducedMotion();
   const now = useNow();
+  const ops = useInboxOps();
 
   if (!questions.length) {
     return (
@@ -371,7 +391,7 @@ function FilteredList({ questions }: { questions: Question[] }) {
                   <button
                     type="button"
                     onClick={() => {
-                      moveQuestion(q.id, "new");
+                      void ops.move(q.id, "new");
                       toast("Moved to your inbox.", "success");
                     }}
                     className="underline underline-offset-4"
@@ -381,7 +401,7 @@ function FilteredList({ questions }: { questions: Question[] }) {
                   <button
                     type="button"
                     onClick={() => {
-                      deleteQuestion(q.id);
+                      void ops.remove(q.id);
                       toast("Question deleted.");
                     }}
                     className="inline-flex items-center gap-1.5 text-margin-deep underline underline-offset-4"

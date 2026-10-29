@@ -54,10 +54,11 @@ export interface Question {
   answer?: Answer;
 }
 
-export interface DB {
-  version: 1;
+/** What anyone visiting an ask page may see about its host. */
+export type PublicProfile = Pick<Profile, "handle" | "displayName" | "prompt" | "mode" | "paused">;
+
+/** What the signed-in host's screens load: their profile and every question they own. */
+export interface InboxData {
   profile: Profile | null;
   questions: Question[];
-  /** Send timestamps per handle, for this device's rate limit. */
-  sent: Record<string, number[]>;
 }

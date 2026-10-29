@@ -1,19 +1,15 @@
-import type { Profile, Question } from "./types";
+import type { PublicProfile, Question } from "./types";
 
 /*
  * The /@demo sample page. Every line here was written by the Poocho team as
  * an example and the page says so. These are never shown in an inbox.
  */
-export const SAMPLE_PROFILE: Profile = {
+export const SAMPLE_PROFILE: PublicProfile = {
   handle: "demo",
   displayName: "Sample page",
   prompt: "Ask me anything about starting college",
   mode: "choice",
-  filterLevel: "standard",
-  blockedWords: [],
   paused: false,
-  createdAt: 0,
-  ageConfirmedAt: 0,
 };
 
 const clean = { score: 0, categories: [], flagged: false, supportCard: false };

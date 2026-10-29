@@ -1,8 +1,10 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/anek-devanagari/standard.css";
 import "@fontsource/kalam/400.css";
 import "@fontsource/kalam/700.css";
 import "./globals.css";
+import { clerkAppearance } from "@/lib/clerk-appearance";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
@@ -38,7 +40,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           Skip to content
         </a>
-        <Providers>{children}</Providers>
+        <ClerkProvider appearance={clerkAppearance}>
+          <Providers>{children}</Providers>
+        </ClerkProvider>
       </body>
     </html>
   );
