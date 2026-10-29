@@ -54,7 +54,7 @@ describe("the inbox only ever holds questions people typed", () => {
   });
 
   it("stores exactly the text the asker sent, and nothing else", async () => {
-    assert.deepEqual(await ask("  What's your go-to chai order?  "), { ok: true, supportCard: false });
+    assert.deepEqual(await ask("  What's your go-to chai order?  "), { ok: true, supportCard: false, mode: "anonymous", filteredFor: null });
     const [only, ...rest] = await repo.listInbox(db, HOST);
     assert.equal(rest.length, 0);
     assert.equal(only.body, "What's your go-to chai order?");
@@ -109,7 +109,7 @@ describe("filtering and rate limits happen on the server", () => {
   });
 
   it("flags self-harm for the support card", async () => {
-    assert.deepEqual(await ask("sometimes I want to die"), { ok: true, supportCard: true });
+    assert.deepEqual(await ask("sometimes I want to die"), { ok: true, supportCard: true, mode: "anonymous", filteredFor: "self_harm" });
   });
 
   it("allows five questions per asker per host per hour", async () => {

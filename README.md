@@ -37,6 +37,11 @@ On Vercel, add the same variables in Project Settings → Environment Variables,
 | `/settings` | Link mode, filter level, blocked words, pause inbox, JSON/CSV export, and account deletion that removes the Clerk user and every row they own (US-7). |
 | `/pledge` | The Real Questions Pledge, how anonymity works, retention table and community guidelines (§8, §9). |
 | `/@demo` | A sample page, clearly labelled as written by the Poocho team. |
+| `/hi` | The landing page in Hindi at its own URL, paired with `/` through hreflang (§12). |
+| `/guides` | Hub for the content pages: `/alternatives/{ngl,tellonym,curiouscat}`, `/guides/…`, `/use-cases/{town-hall,classroom}`, `/ideas/story-questions` and Hindi versions under `/hi/…`. All prerendered from `lib/content`. |
+| `/admin` | This week's numbers and a UTM link builder, for Clerk users listed in `ADMIN_USER_IDS`. |
+| `/api/health` | 200 when the app can reach Postgres, 503 when it can't. For the uptime monitor. |
+| `/robots.txt`, `/sitemap.xml` | Crawl rules, and a sitemap of the homepage, guides and only the ask pages that pass the indexing gate. |
 
 ## Design
 
@@ -72,11 +77,22 @@ tests/               node:test suites; repository tests run real SQL on PGlite
 
 **Moderation and rate limits** run on the server before delivery. Askers are rate-limited to 5 questions per host per hour by a salted, daily-rotating hash of their IP and browser. Raw IPs are never stored, and hosts can't see the hash. Filtered questions and the ask log are deleted after 30 days.
 
+## Search, sharing and analytics
+
+The launch playbook's technical work lives in the app; the marketing material lives in [`docs/marketing`](./docs/marketing/README.md).
+
+- **One address.** `NEXT_PUBLIC_SITE_URL` drives canonicals, the sitemap, share images, story cards and printed links. Set it to the real domain and production 308-redirects `*.vercel.app` there (`proxy.ts`).
+- **Indexing gate (PRD §12.4).** An ask page is indexed only with three public answers of 120+ characters to questions that passed moderation, on an account at least a week old with its inbox open. Everything else is `noindex,follow` and stays out of the sitemap. The thresholds live in `lib/seo.ts`; `tests/seo.test.ts` covers them on real SQL.
+- **Metadata.** Every page sets its own canonical through `lib/metadata.ts` (a canonical in the root layout would be inherited by any page that forgot one). Structured data: Organization and WebSite site-wide, ProfilePage on ask pages, Article and BreadcrumbList on guides.
+- **Share images.** `lib/og/render.tsx` draws them with Satori in the paper-and-ink style. Satori can't shape Devanagari, so Hindi share images are prerendered in Chromium by `npm run creatives`, which also renders the marketing creatives; dynamic images leave out Devanagari user text rather than garble it.
+- **Analytics.** Vercel Web Analytics and Speed Insights, plus PostHog when `NEXT_PUBLIC_POSTHOG_KEY` is set (`lib/analytics.ts`). Hosts are identified only after sign-up. Asker events are sent from the server with a random ID, no question text is ever a property, and autocapture and session replay are off.
+- **IndexNow.** The key file is in `public/`; publishing an answer on a profile that passes the gate pings IndexNow, but only from production on a non-`vercel.app` domain.
+
 ## What's next
 
 1. **Clerk production instance:** needs a domain you own, plus your own Google OAuth client for production sign-in.
 2. **Server-side moderation model:** swap the heuristic filter for a hosted moderation API plus an LLM Hinglish classifier.
-3. **SEO gate** (§12): index only host-approved, substantive answers, and generate OG images with the card renderer.
+3. **Answer pages** (§12): one indexable page per substantive answer, once hosts can opt answers in to Google.
 4. **Live updates:** move the inbox from polling to Neon Realtime once it supports per-host privacy.
 
-Set `NEXT_PUBLIC_SITE_URL` in production so links, story cards and the landing page show the real domain.
+Set `NEXT_PUBLIC_SITE_URL` in production so links, story cards, canonicals and the sitemap use the real domain. See [Domain day](./docs/marketing/setup-accounts.md#domain-day) for the full switch to poocho.app.

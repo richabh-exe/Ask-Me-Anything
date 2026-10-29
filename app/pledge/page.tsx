@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { SiteFooter } from "@/components/ui/SiteFooter";
 import { SiteNav } from "@/components/ui/SiteNav";
+import { pageMetadata } from "@/lib/metadata";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "The Real Questions Pledge",
   description:
     "Poocho never sends fake questions, never sells hints about who asked, filters abuse before you see it, and is for adults only.",
-};
+  path: "/pledge",
+});
 
 const PROMISES = [
   {
@@ -87,7 +89,26 @@ export default function PledgePage() {
                       data in an access-controlled log for 30 days. In plain words: you are anonymous to the host, not to the law. If
                       we receive a valid legal order, or a report of a serious threat, our Trust and Safety team can act on it.
                     </p>
-                    <p>There are no third-party ad trackers on ask pages.</p>
+                  </div>
+
+                  <h2 id="analytics" className="mt-14 scroll-mt-8 text-[1.4rem] font-bold stretch-semi">
+                    What we measure
+                  </h2>
+                  <div className="mt-3 grid max-w-[64ch] gap-4 leading-relaxed">
+                    <p>We count how Poocho is used so we can make it better, never who asked what.</p>
+                    <ul className="grid list-disc gap-2 pl-5 marker:text-margin">
+                      <li>
+                        <strong>Vercel Web Analytics and Speed Insights</strong> count page visits, where they came from and how fast pages
+                        load. They use no cookies.
+                      </li>
+                      <li>
+                        <strong>PostHog</strong> records a few product events, such as a link being shared or an answer being published.
+                        Hosts are linked to their account ID after they sign up. People asking questions are never identified: those events
+                        are sent from our server with a random ID, and no question or answer text is ever included. Session recording is
+                        off.
+                      </li>
+                    </ul>
+                    <p>There are no advertising trackers or pixels anywhere on Poocho, and we don&apos;t sell data.</p>
                   </div>
 
                   <h2 className="mt-14 text-[1.4rem] font-bold stretch-semi">How long we keep things</h2>

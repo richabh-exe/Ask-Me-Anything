@@ -1,27 +1,38 @@
 import { ClerkProvider } from "@clerk/nextjs";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/anek-devanagari/standard.css";
 import "@fontsource/kalam/400.css";
 import "@fontsource/kalam/700.css";
 import "./globals.css";
+import { ProductAnalytics } from "@/components/analytics/ProductAnalytics";
 import { clerkAppearance } from "@/lib/clerk-appearance";
+import { BRAND, jsonLd, siteGraph } from "@/lib/seo";
+import { serverOrigin } from "@/lib/site";
 import { Providers } from "./providers";
 
+/*
+ * Site-wide defaults. Canonicals and hreflang are set page by page (see
+ * lib/metadata.ts): a canonical here would be inherited by every page that
+ * forgot its own and point them all at the homepage.
+ */
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://poocho.app"),
+  metadataBase: new URL(serverOrigin()),
   title: {
-    default: "Poocho: get asked anything, only by real people",
+    default: `${BRAND.name}: ${BRAND.tagline.toLowerCase()}`,
     template: "%s | Poocho",
   },
-  description:
-    "Share one link on your story. People ask anonymously, Poocho filters cruel questions before you see them, and your answers become story cards. No fake questions, ever.",
-  applicationName: "Poocho",
+  description: BRAND.description,
+  applicationName: BRAND.name,
   openGraph: {
-    title: "Poocho: get asked anything, only by real people",
+    title: `${BRAND.name}: ${BRAND.tagline.toLowerCase()}`,
     description: "Anonymous questions from real people, filtered before you see them, answered as story cards.",
-    siteName: "Poocho",
+    siteName: BRAND.name,
     type: "website",
+    locale: "en_IN",
   },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {
@@ -42,7 +53,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         </a>
         <ClerkProvider appearance={clerkAppearance}>
           <Providers>{children}</Providers>
+          <ProductAnalytics />
         </ClerkProvider>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(siteGraph()) }} />
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

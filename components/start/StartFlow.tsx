@@ -4,7 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { SignIn, useAuth, useUser } from "@clerk/nextjs";
-import { Suspense, useId, useRef, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createProfileAction, handleStatusAction } from "@/app/actions";
 import { StoryCanvas } from "@/components/story/StoryCanvas";
 import { useShareCard } from "@/components/story/useShareCard";
@@ -13,6 +13,7 @@ import { IconCheck, IconCopy, IconShare, IconX } from "@/components/ui/Icons";
 import { Segmented } from "@/components/ui/Segmented";
 import { useToast } from "@/components/ui/Toast";
 import { ageFrom, MIN_AGE } from "@/lib/age";
+import { shareChannel, track } from "@/lib/analytics";
 import { checkHandle, cleanHandle } from "@/lib/handle";
 import { IDEAS } from "@/lib/ideas";
 import { FILTER_OPTIONS, MODE_OPTIONS } from "@/lib/options";
@@ -42,6 +43,22 @@ function ageCheckPassed(): boolean {
 
 const noSubscribe = () => () => {};
 
+const PROMPT_KEY = "poocho:prompt";
+
+/*
+ * A prompt picked on /ideas arrives as ?prompt=. It's kept for this tab only,
+ * so it survives the Google sign-in redirect, which drops the query string.
+ */
+function initialPrompt(fromUrl: string | null): string {
+  const picked = fromUrl?.trim().slice(0, 80);
+  try {
+    if (picked) window.sessionStorage.setItem(PROMPT_KEY, picked);
+    return picked || window.sessionStorage.getItem(PROMPT_KEY) || "Ask me anything!";
+  } catch {
+    return picked || "Ask me anything!";
+  }
+}
+
 function rememberAgeCheck(passed: boolean) {
   try {
     if (passed) window.localStorage.setItem(AGE_KEY, String(Date.now()));
@@ -68,7 +85,7 @@ export function StartFlow() {
   // null until the host types, so the name from their Google or Clerk profile can fill in first.
   const [name, setName] = useState<string | null>(null);
   const [handleInput, setHandleInput] = useState(() => cleanHandle(params.get("handle") ?? ""));
-  const [prompt, setPrompt] = useState("Ask me anything!");
+  const [prompt, setPrompt] = useState(() => initialPrompt(params.get("prompt")));
   const [mode, setMode] = useState<LinkMode>("anonymous");
   const [filterLevel, setFilterLevel] = useState<FilterLevel>("standard");
   const [busy, setBusy] = useState(false);
@@ -87,6 +104,15 @@ export function StartFlow() {
   if (step === 1 && isSignedIn) step = 2;
 
   const suggestedName = user?.fullName || user?.firstName || "";
+
+  // Funnel step one: a visitor reached the account step without being signed in.
+  const signupSeen = useRef(false);
+  const atAccountStep = step === 1 && isLoaded && !isSignedIn;
+  useEffect(() => {
+    if (!atAccountStep || signupSeen.current) return;
+    signupSeen.current = true;
+    track("signup_started", { step: "account" });
+  }, [atAccountStep]);
 
   const go = (next: number) => {
     setError("");
@@ -131,6 +157,13 @@ export function StartFlow() {
     try {
       const result = await createProfileAction({ handle, displayName, prompt, mode, filterLevel });
       if (result.ok) {
+        const google = user?.externalAccounts.some((a) => a.provider.includes("google")) ?? false;
+        track("signup_completed", { method: google ? "google" : "email" });
+        try {
+          window.sessionStorage.removeItem(PROMPT_KEY);
+        } catch {
+          /* nothing stored */
+        }
         rememberAgeCheck(false);
         setCreated(result.profile);
         go(4);
@@ -371,19 +404,26 @@ export function StartFlow() {
                       </p>
                       <Button
                         variant="ink"
-                        onClick={() =>
-                          void shareCard(
-                            (ctx) => drawInviteCard(ctx, { prompt: created.prompt, handle: created.handle, host: displayHost() }),
-                            `poocho-${created.handle}.png`,
-                            askUrl(created.handle),
-                          )
-                        }
+                        onClick={async () => {
+                          const channel = shareChannel(
+                            await shareCard(
+                              (ctx) => drawInviteCard(ctx, { prompt: created.prompt, handle: created.handle, host: displayHost() }),
+                              `poocho-${created.handle}.png`,
+                              askUrl(created.handle),
+                            ),
+                          );
+                          if (channel) track("link_shared", { channel });
+                        }}
                       >
                         <IconShare /> Share to story
                       </Button>
                       <Button
                         variant="paper"
-                        onClick={async () => toast((await copyText(askUrl(created.handle))) ? "Link copied." : "Copy failed. Select the link and copy it.")}
+                        onClick={async () => {
+                          const copied = await copyText(askUrl(created.handle));
+                          if (copied) track("link_shared", { channel: "copy" });
+                          toast(copied ? "Link copied." : "Copy failed. Select the link and copy it.");
+                        }}
                       >
                         <IconCopy /> Copy link
                       </Button>

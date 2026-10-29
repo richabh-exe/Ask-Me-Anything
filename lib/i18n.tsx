@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 
 export type Locale = "en" | "hi";
@@ -83,6 +84,12 @@ const en = {
   "footer.pledge": "Real Questions Pledge",
   "footer.guidelines": "Community guidelines",
   "footer.privacy": "How anonymity works",
+  "footer.guides": "Guides",
+  "footer.allGuides": "All guides",
+  "footer.instagram": "Anonymous questions on Instagram",
+  "footer.ngl": "NGL alternative",
+  "footer.safety": "Are these apps safe?",
+  "footer.ideas": "100 story prompts",
 
   "ask.anon": "Anonymous. @{h} can't see who you are.",
   "ask.named": "Your name will be shown to @{h}.",
@@ -200,6 +207,12 @@ const hi: Record<MessageKey, string> = {
   "footer.pledge": "असली सवालों का वादा",
   "footer.guidelines": "कम्युनिटी के नियम",
   "footer.privacy": "गुमनामी कैसे काम करती है",
+  "footer.guides": "गाइड",
+  "footer.allGuides": "सारी गाइड",
+  "footer.instagram": "इंस्टाग्राम पर गुमनाम सवाल",
+  "footer.ngl": "NGL का विकल्प",
+  "footer.safety": "क्या ये ऐप सुरक्षित हैं?",
+  "footer.ideas": "स्टोरी के 100 सवाल",
 
   "ask.anon": "गुमनाम। @{h} नहीं देख सकते कि आप कौन हैं।",
   "ask.named": "आपका नाम @{h} को दिखेगा।",
@@ -286,20 +299,61 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // A LocaleScope (the /hi pages) owns the page language while it's mounted.
+    if (document.querySelector("[data-locale-scope]")) return;
     document.documentElement.lang = locale === "hi" ? "hi" : "en";
   }, [locale]);
 
-  const value = useMemo<I18n>(() => {
-    const dict = DICTIONARIES[locale];
-    const t: Translate = (key, vars) => {
-      let text: string = dict[key] ?? en[key];
-      if (vars) for (const [name, v] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, String(v));
-      return text;
-    };
-    return { locale, setLocale, t };
-  }, [locale, setLocale]);
+  const value = useMemo<I18n>(() => ({ locale, setLocale, t: translator(locale) }), [locale, setLocale]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+function translator(locale: Locale): Translate {
+  const dict = DICTIONARIES[locale];
+  return (key, vars) => {
+    let text: string = dict[key] ?? en[key];
+    if (vars) for (const [name, v] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, String(v));
+    return text;
+  };
+}
+
+/*
+ * Pins a subtree to one language for URLs that search engines index on their
+ * own, such as /hi. The toggle still works: it saves the choice and opens the
+ * same page in the other language.
+ */
+export function LocaleScope({ locale, alternate, children }: { locale: Locale; alternate: string; children: React.ReactNode }) {
+  const { setLocale: remember } = useI18n();
+  const router = useRouter();
+  const value = useMemo<I18n>(
+    () => ({
+      locale,
+      t: translator(locale),
+      setLocale: (next) => {
+        remember(next);
+        if (next !== locale) router.push(alternate);
+      },
+    }),
+    [locale, alternate, remember, router],
+  );
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const previous = html.lang;
+    html.lang = locale;
+    return () => {
+      html.lang = previous;
+    };
+  }, [locale]);
+
+  return (
+    <I18nContext.Provider value={value}>
+      <div lang={locale} data-locale-scope="" className="contents">
+        {children}
+      </div>
+    </I18nContext.Provider>
+  );
 }
 
 export function useI18n(): I18n {

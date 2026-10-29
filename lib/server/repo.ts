@@ -1,9 +1,10 @@
-import { and, count, desc, eq, gt, inArray, lt } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, lt, lte, max, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { checkHandle } from "../handle";
 import { MAX_ANSWER, MAX_QUESTION, RATE_LIMIT, RATE_WINDOW_MS, RETENTION_MS } from "../limits";
 import { moderate } from "../moderation";
-import type { Answer, FilterLevel, LinkMode, Profile, PublicProfile, Question, QuestionStatus } from "../types";
+import { INDEXING } from "../seo";
+import type { Answer, FilterLevel, LinkMode, ModerationCategory, Profile, PublicProfile, Question, QuestionStatus } from "../types";
 import * as schema from "./schema";
 import { answers, askLog, profiles, questions } from "./schema";
 
@@ -97,6 +98,7 @@ export async function createProfile(db: Db, id: string, input: NewProfile, now =
         mode: input.mode,
         filterLevel: input.filterLevel,
         ageConfirmedAt: now,
+        createdAt: now,
       })
       .returning();
     return { ok: true, profile: toProfile(row) };
@@ -130,7 +132,13 @@ export async function deleteProfile(db: Db, id: string) {
 /* ── asking ─────────────────────────────────────────────────────────── */
 
 export type AskResult =
-  | { ok: true; supportCard: boolean }
+  | {
+      ok: true;
+      supportCard: boolean;
+      /** For server-side analytics only. The action strips these before replying to the asker. */
+      mode: LinkMode;
+      filteredFor: ModerationCategory | "score" | null;
+    }
   | { ok: false; reason: "unclaimed" | "paused" | "empty" | "too_long" | "name_required" }
   | { ok: false; reason: "rate_limited"; retryInMs: number };
 
@@ -182,7 +190,12 @@ export async function askQuestion(db: Db, input: AskInput, now = new Date()): Pr
     await tx.delete(askLog).where(and(eq(askLog.hostId, hostId), lt(askLog.createdAt, new Date(now.getTime() - RETENTION_MS))));
   });
 
-  return { ok: true, supportCard: moderation.supportCard };
+  return {
+    ok: true,
+    supportCard: moderation.supportCard,
+    mode: profile.mode,
+    filteredFor: moderation.flagged ? (moderation.categories[0] ?? "score") : null,
+  };
 }
 
 /* ── the host's inbox ───────────────────────────────────────────────── */
@@ -300,3 +313,111 @@ export async function countQuestions(db: Db, hostId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/* ── search (PRD §12.4) ─────────────────────────────────────────────── */
+
+/** Public answers to moderation-clean questions that are long enough to be worth indexing. */
+const substantiveAnswer = and(
+  eq(answers.isPublic, true),
+  eq(questions.status, "answered"),
+  sql`coalesce((${questions.moderation}->>'flagged')::boolean, false) = false`,
+  gte(sql`char_length(${answers.body})`, INDEXING.minAnswerChars),
+);
+
+export async function countSubstantiveAnswers(db: Db, hostId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(answers)
+    .innerJoin(questions, eq(questions.id, answers.questionId))
+    .where(and(eq(answers.hostId, hostId), substantiveAnswer));
+  return Number(row?.n ?? 0);
+}
+
+/** Profiles that pass the indexing gate, newest answer first. Feeds the sitemap. */
+export async function indexableProfiles(db: Db, now = new Date()): Promise<{ handle: string; lastModified: Date }[]> {
+  const lastModified = max(answers.answeredAt);
+  const rows = await db
+    .select({ handle: profiles.handle, lastModified })
+    .from(profiles)
+    .innerJoin(answers, eq(answers.hostId, profiles.id))
+    .innerJoin(questions, eq(questions.id, answers.questionId))
+    .where(
+      and(
+        eq(profiles.paused, false),
+        lte(profiles.createdAt, new Date(now.getTime() - INDEXING.minAccountAgeMs)),
+        substantiveAnswer,
+      ),
+    )
+    .groupBy(profiles.id)
+    .having(gte(count(), INDEXING.minAnswers))
+    .orderBy(desc(lastModified))
+    .limit(10_000);
+  return rows.map((r) => ({ handle: r.handle, lastModified: r.lastModified ?? now }));
+}
+
+
+/* ── admin numbers (playbook: Monitoring, "Core user-count queries") ── */
+
+export interface AdminStats {
+  totalHosts: number;
+  newToday: number;
+  newThisWeek: number;
+  /** Hosts who answered at least once in the last 7 days. */
+  weeklyActiveHosts: number;
+  /** The north star: answers published in the last 7 days. */
+  weeklyAnswers: number;
+  questionsThisWeek: number;
+  filteredPct: number;
+  /** Hosts who joined 2–30 days ago and got a real (unfiltered) question within 48 hours. */
+  activationPct: number;
+  indexableProfiles: number;
+}
+
+export async function adminStats(db: Db, now = new Date()): Promise<AdminStats> {
+  const day = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const week = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const twoDays = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+  const month = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [[hosts], [active], [questionsRow], [activation], indexable] = await Promise.all([
+    db
+      .select({
+        total: count(),
+        today: sql<number>`count(*) filter (where ${profiles.createdAt} > ${day})`,
+        week: sql<number>`count(*) filter (where ${profiles.createdAt} > ${week})`,
+      })
+      .from(profiles),
+    db
+      .select({ hosts: sql<number>`count(distinct ${answers.hostId})`, answers: count() })
+      .from(answers)
+      .where(gt(answers.answeredAt, week)),
+    db
+      .select({ total: count(), filtered: sql<number>`count(*) filter (where ${questions.status} = 'filtered')` })
+      .from(questions)
+      .where(gt(questions.createdAt, week)),
+    db
+      .select({
+        cohort: count(),
+        // Spelled out because Drizzle drops table prefixes in single-table selects, which would make the correlation ambiguous.
+        activated: sql<number>`count(*) filter (where exists (
+          select 1 from questions q
+          where q.host_id = profiles.id and q.status <> 'filtered' and q.created_at <= profiles.created_at + interval '48 hours'
+        ))`,
+      })
+      .from(profiles)
+      .where(and(gt(profiles.createdAt, month), lte(profiles.createdAt, twoDays))),
+    indexableProfiles(db, now),
+  ]);
+
+  const pct = (part: number, whole: number) => (whole ? Math.round((1000 * part) / whole) / 10 : 0);
+  return {
+    totalHosts: Number(hosts.total),
+    newToday: Number(hosts.today),
+    newThisWeek: Number(hosts.week),
+    weeklyActiveHosts: Number(active.hosts),
+    weeklyAnswers: Number(active.answers),
+    questionsThisWeek: Number(questionsRow.total),
+    filteredPct: pct(Number(questionsRow.filtered), Number(questionsRow.total)),
+    activationPct: pct(Number(activation.activated), Number(activation.cohort)),
+    indexableProfiles: indexable.length,
+  };
+}

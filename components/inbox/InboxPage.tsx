@@ -13,6 +13,7 @@ import { IconCopy, IconEye, IconSettings, IconShare, IconTrash } from "@/compone
 import { useToast } from "@/components/ui/Toast";
 import { IDEAS } from "@/lib/ideas";
 import { CATEGORY_LABEL } from "@/lib/moderation";
+import { shareChannel, track } from "@/lib/analytics";
 import { copyText } from "@/lib/share";
 import { askPath, askUrl, displayHost } from "@/lib/site";
 import { useInbox } from "@/lib/client/useInbox";
@@ -180,7 +181,11 @@ function Header({ profile }: { profile: Profile }) {
           <button
             type="button"
             aria-label="Copy link"
-            onClick={async () => toast((await copyText(askUrl(profile.handle))) ? "Link copied." : "Copy failed. Select the link and copy it.")}
+            onClick={async () => {
+              const copied = await copyText(askUrl(profile.handle));
+              if (copied) track("link_shared", { channel: "copy" });
+              toast(copied ? "Link copied." : "Copy failed. Select the link and copy it.");
+            }}
             className="grid h-10 w-10 place-items-center rounded-full border-2 border-navy bg-white hover:bg-paper"
           >
             <IconCopy className="h-[18px] w-[18px]" />
@@ -190,13 +195,16 @@ function Header({ profile }: { profile: Profile }) {
       <div className="flex flex-wrap gap-3">
         <Button
           variant="ink"
-          onClick={() =>
-            void shareCard(
-              (ctx) => drawInviteCard(ctx, { prompt: profile.prompt, handle: profile.handle, host: displayHost() }),
-              `poocho-${profile.handle}.png`,
-              askUrl(profile.handle),
-            )
-          }
+          onClick={async () => {
+            const channel = shareChannel(
+              await shareCard(
+                (ctx) => drawInviteCard(ctx, { prompt: profile.prompt, handle: profile.handle, host: displayHost() }),
+                `poocho-${profile.handle}.png`,
+                askUrl(profile.handle),
+              ),
+            );
+            if (channel) track("link_shared", { channel });
+          }}
         >
           <IconShare /> Share your link
         </Button>
@@ -307,22 +315,26 @@ function AnsweredList({ questions, profile, onEdit }: { questions: Question[]; p
                   size="sm"
                   variant="ink"
                   aria-label="Share answer to story"
-                  onClick={() =>
-                    q.answer &&
-                    void shareCard(
-                      (ctx) =>
-                        drawAnswerCard(ctx, {
-                          question: q.body,
-                          answer: q.answer!.body,
-                          handle: profile.handle,
-                          host: displayHost(),
-                          askerName: q.askerName,
-                          template: q.answer!.template,
-                        }),
-                      `poocho-${profile.handle}-answer.png`,
-                      askUrl(profile.handle),
-                    )
-                  }
+                  onClick={async () => {
+                    const answer = q.answer;
+                    if (!answer) return;
+                    const channel = shareChannel(
+                      await shareCard(
+                        (ctx) =>
+                          drawAnswerCard(ctx, {
+                            question: q.body,
+                            answer: answer.body,
+                            handle: profile.handle,
+                            host: displayHost(),
+                            askerName: q.askerName,
+                            template: answer.template,
+                          }),
+                        `poocho-${profile.handle}-answer.png`,
+                        askUrl(profile.handle),
+                      ),
+                    );
+                    if (channel) track("card_shared", { channel, template: answer.template });
+                  }}
                 >
                   <IconShare className="h-4 w-4" /> Share
                 </Button>

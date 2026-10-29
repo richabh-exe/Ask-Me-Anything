@@ -9,6 +9,7 @@ import { ButtonLink } from "@/components/ui/Button";
 import { IconLock, IconUser } from "@/components/ui/Icons";
 import { SiteFooter } from "@/components/ui/SiteFooter";
 import { SiteNav } from "@/components/ui/SiteNav";
+import { track } from "@/lib/analytics";
 import { useI18n } from "@/lib/i18n";
 import { hasPersonalInfo, moderate } from "@/lib/moderation";
 import { askQuestionAction } from "@/app/actions";
@@ -301,7 +302,12 @@ function AskForm({ profile, isSample, own }: { profile: PublicProfile; isSample:
                   <div className="torn on-paper rounded-[4px] bg-haldi px-6 pt-8 pb-6 text-navy">
                     <p className="text-[1.6rem] leading-tight font-extrabold stretch-wide">{t("ask.ownTitle")}</p>
                     <p className="mt-2 text-[1.02rem]">{t("ask.ownBody", { h })}</p>
-                    <ButtonLink href="/start" variant="ink" className="mt-5">
+                    <ButtonLink
+                      href="/start"
+                      variant="ink"
+                      className="mt-5"
+                      onClick={() => track("ask_page_cta_clicked", { placement: isSample ? "sample" : "after_send" })}
+                    >
                       {t("ask.own")}
                     </ButtonLink>
                   </div>
@@ -377,7 +383,11 @@ function Unclaimed({ handle }: { handle: string }) {
           <div className="pl-6">
             <h1 className="text-[1.7rem] leading-[2.25rem] font-extrabold stretch-semi">{t("ask.unclaimedTitle", { h: handle })}</h1>
             <p className="mt-[2.25rem] font-hand text-[1.2rem] leading-[2.25rem] text-ink">{t("ask.unclaimedBody")}</p>
-            <ButtonLink href={`/start?handle=${encodeURIComponent(handle)}`} className="mt-6">
+            <ButtonLink
+              href={`/start?handle=${encodeURIComponent(handle)}`}
+              className="mt-6"
+              onClick={() => track("ask_page_cta_clicked", { placement: "unclaimed" })}
+            >
               {t("ask.claim", { h: handle })}
             </ButtonLink>
           </div>
