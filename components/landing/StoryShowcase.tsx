@@ -3,6 +3,7 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useRef, useState } from "react";
 import { StoryCanvas } from "@/components/story/StoryCanvas";
+import { useSiteHost } from "@/lib/client/useSiteHost";
 import { useI18n } from "@/lib/i18n";
 import { TEMPLATES } from "@/lib/story-card";
 
@@ -12,6 +13,7 @@ import { TEMPLATES } from "@/lib/story-card";
  */
 export function StoryShowcase() {
   const { t, locale } = useI18n();
+  const host = useSiteHost();
   const reduce = useReducedMotion();
   const [active, setActive] = useState(0);
   const radios = useRef<(HTMLButtonElement | null)[]>([]);
@@ -109,7 +111,7 @@ export function StoryShowcase() {
                       question: t("cards.q"),
                       answer: t("cards.a"),
                       handle: "you",
-                      host: "poocho.app",
+                      host,
                       template: tpl.id,
                       labels: { anonymous: t("ask.anonQuestion"), askedBy: t("ask.askedBy"), askMe: locale === "hi" ? "मुझसे पूछो" : "Ask me on" },
                     }}

@@ -79,4 +79,4 @@ tests/               node:test suites; repository tests run real SQL on PGlite
 3. **SEO gate** (§12): index only host-approved, substantive answers, and generate OG images with the card renderer.
 4. **Live updates:** move the inbox from polling to Neon Realtime once it supports per-host privacy.
 
-Set `NEXT_PUBLIC_SITE_URL` in production so story cards and links show the real domain.
+Set `NEXT_PUBLIC_SITE_URL` in production so links, story cards and the landing page show the real domain.

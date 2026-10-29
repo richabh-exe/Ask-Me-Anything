@@ -1,11 +1,33 @@
 "use client";
 
+import { UrlText } from "@/components/ui/UrlText";
+import { useSiteHost } from "@/lib/client/useSiteHost";
 import { useI18n, type MessageKey } from "@/lib/i18n";
 
 const STEPS = [1, 2, 3, 4] as const;
+// Stands in for {link} so the copy decides where the link goes in each language.
+const LINK = "";
+
+function StepBody({ text, link }: { text: string; link: string }) {
+  const [before, after] = text.split(LINK);
+  return (
+    <p className="mt-2 max-w-[32ch] text-navy-soft">
+      {before}
+      {after !== undefined && (
+        <>
+          <span className="font-semibold text-ink">
+            <UrlText url={link} />
+          </span>
+          {after}
+        </>
+      )}
+    </p>
+  );
+}
 
 export function HowItWorks() {
   const { t } = useI18n();
+  const host = useSiteHost();
 
   return (
     <section aria-labelledby="how-title" className="on-paper relative overflow-hidden bg-paper py-20 md:py-28">
@@ -66,7 +88,7 @@ export function HowItWorks() {
                   <span className="sr-only">{n}. </span>
                   {t(`how.${n}.title` as MessageKey)}
                 </h3>
-                <p className="mt-2 max-w-[32ch] text-navy-soft">{t(`how.${n}.body` as MessageKey)}</p>
+                <StepBody text={t(`how.${n}.body` as MessageKey, { link: LINK })} link={`${host}/@you`} />
               </li>
             ))}
           </ol>
