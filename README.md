@@ -96,3 +96,7 @@ The launch playbook's technical work lives in the app; the marketing material li
 4. **Live updates:** move the inbox from polling to Neon Realtime once it supports per-host privacy.
 
 Set `NEXT_PUBLIC_SITE_URL` in production so links, story cards, canonicals and the sitemap use the real domain. See [Domain day](./docs/marketing/setup-accounts.md#domain-day) for the full switch to poocho.app.
+
+## License
+
+Poocho is free software, licensed under the [GNU Affero General Public License v3.0 or later](./LICENSE). You may use, modify and redistribute it. If you run a modified version as a network service, you must offer its users the source code of that version.
