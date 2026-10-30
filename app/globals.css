@@ -47,7 +47,9 @@
     font-feature-settings: "kern";
   }
 
-  :lang(hi) body {
+  :lang(hi) body,
+  body .contents:lang(hi),
+  article:lang(hi) {
     line-height: 1.7;
   }
 

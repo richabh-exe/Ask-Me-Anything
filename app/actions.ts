@@ -3,8 +3,13 @@
 import { createHash } from "node:crypto";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { headers } from "next/headers";
+import { after } from "next/server";
+import { isProfileIndexable } from "@/lib/seo";
+import { captureAskerEvent } from "@/lib/server/analytics";
 import { getDb } from "@/lib/server/db";
+import { pingIndexNow } from "@/lib/server/indexnow";
 import * as repo from "@/lib/server/repo";
+import { askPath } from "@/lib/site";
 import type { Answer, FilterLevel, LinkMode, Profile, QuestionStatus } from "@/lib/types";
 
 /*
@@ -37,13 +42,24 @@ const LEVELS: FilterLevel[] = ["relaxed", "standard", "strict"];
 const TEMPLATES: Answer["template"][] = ["notebook", "ink", "haldi", "margin", "chalk"];
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
-export async function askQuestionAction(handle: string, body: string, askerName?: string): Promise<repo.AskResult> {
-  return repo.askQuestion(getDb(), {
+export type AskReply = Exclude<repo.AskResult, { ok: true }> | { ok: true; supportCard: boolean };
+
+export async function askQuestionAction(handle: string, body: string, askerName?: string): Promise<AskReply> {
+  const result = await repo.askQuestion(getDb(), {
     handle: text(handle),
     body: text(body),
     askerName: text(askerName) || undefined,
     askerHash: await askerHash(),
   });
+  if (!result.ok) return result;
+
+  const { mode, filteredFor, supportCard } = result;
+  after(async () => {
+    await captureAskerEvent({ event: "question_sent", mode });
+    if (filteredFor) await captureAskerEvent({ event: "question_filtered", reason: filteredFor });
+  });
+  // Askers learn only that the question went through, never whether it was filtered.
+  return { ok: true, supportCard };
 }
 
 export async function handleStatusAction(handle: string): Promise<repo.HandleStatus> {
@@ -86,11 +102,25 @@ export async function updateProfileAction(patch: repo.ProfilePatch): Promise<Pro
 export async function answerQuestionAction(questionId: string, answer: Omit<Answer, "answeredAt">): Promise<boolean> {
   const userId = await requireUserId();
   if (!TEMPLATES.includes(answer.template)) return false;
-  return repo.answerQuestion(getDb(), userId, text(questionId), {
+  const isPublic = answer.isPublic === true;
+  const saved = await repo.answerQuestion(getDb(), userId, text(questionId), {
     body: text(answer.body),
     template: answer.template,
-    isPublic: answer.isPublic === true,
+    isPublic,
   });
+  if (saved && isPublic) after(() => announceProfile(userId));
+  return saved;
+}
+
+/** Tells IndexNow a profile changed, once it passes the indexing gate. */
+async function announceProfile(userId: string) {
+  const db = getDb();
+  const profile = await repo.getProfileById(db, userId);
+  if (!profile) return;
+  const substantiveAnswers = await repo.countSubstantiveAnswers(db, userId);
+  if (isProfileIndexable({ createdAt: profile.createdAt, paused: profile.paused, substantiveAnswers })) {
+    await pingIndexNow([askPath(profile.handle)]);
+  }
 }
 
 export async function setAnswerPublicAction(questionId: string, isPublic: boolean) {

@@ -1,0 +1,34 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Poocho//Launch kit//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VTIMEZONE
+TZID:Asia/Kolkata
+BEGIN:STANDARD
+DTSTART:19700101T000000
+TZOFFSETFROM:+0530
+TZOFFSETTO:+0530
+TZNAME:IST
+END:STANDARD
+END:VTIMEZONE
+BEGIN:VEVENT
+UID:poocho-monday-review-20261109@poocho
+DTSTAMP:20261029T000000Z
+DTSTART;TZID=Asia/Kolkata:20261109T100000
+DURATION:PT15M
+RRULE:FREQ=WEEKLY;BYDAY=MO
+SUMMARY:Poocho Monday review (15 min)
+DESCRIPTION:1. /admin: copy the six tiles into the KPI table.\n2. Vercel An
+ alytics: visitors\, top referrers\, UTM campaigns.\n3. PostHog: signup fun
+ nel\, viral funnel (ask_page_cta_clicked → signup_completed)\, D7 retent
+ ion.\n4. Search Console: clicks\, impressions\, newly indexed pages.\n5. U
+ ptimeRobot: any downtime.\n6. Write this week's build-in-public post (docs
+ /marketing/content-calendar.md).
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Poocho Monday review
+TRIGGER:-PT10M
+END:VALARM
+END:VEVENT
+END:VCALENDAR

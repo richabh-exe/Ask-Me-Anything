@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { IconDownload, IconShare, IconTrash, IconX } from "@/components/ui/Icons";
 import { useToast } from "@/components/ui/Toast";
 import { useInboxOps } from "@/components/inbox/ops";
+import { shareChannel, track } from "@/lib/analytics";
 import { MAX_ANSWER } from "@/lib/limits";
 import { downloadBlob } from "@/lib/share";
 import { askUrl, displayHost } from "@/lib/site";
@@ -79,7 +80,16 @@ export function Composer({ question, profile, onClose }: { question: Question; p
     };
   }, [onClose, reduce]);
 
-  const save = () => ops.answer(question.id, { body: answer, template, isPublic });
+  // answer_published counts each answer once, however many times it's re-saved while open.
+  const published = useRef(false);
+  const save = async () => {
+    const saved = await ops.answer(question.id, { body: answer, template, isPublic });
+    if (saved && !published.current) {
+      published.current = true;
+      track("answer_published", { template, public: isPublic });
+    }
+    return saved;
+  };
 
   const requireAnswer = () => {
     if (answer.trim()) return true;
@@ -223,7 +233,10 @@ export function Composer({ question, profile, onClose }: { question: Question; p
                   if (!requireAnswer()) return;
                   setWorking(true);
                   void save();
-                  await shareCard((ctx) => drawAnswerCard(ctx, content), `poocho-${profile.handle}-answer.png`, askUrl(profile.handle));
+                  const channel = shareChannel(
+                    await shareCard((ctx) => drawAnswerCard(ctx, content), `poocho-${profile.handle}-answer.png`, askUrl(profile.handle)),
+                  );
+                  if (channel) track("card_shared", { channel, template });
                   setWorking(false);
                 }}
               >
@@ -238,6 +251,7 @@ export function Composer({ question, profile, onClose }: { question: Question; p
                   void save();
                   try {
                     downloadBlob(await renderToBlob((ctx) => drawAnswerCard(ctx, content)), `poocho-${profile.handle}-answer.png`);
+                    track("card_shared", { channel: "download", template });
                     toast("Image saved.", "success");
                   } catch {
                     toast("The image couldn't be created. Try again.", "warn");
