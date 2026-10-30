@@ -8,7 +8,7 @@ This folder turns the *Poocho Launch Playbook: SEO, Monitoring & Marketing* (30 
 
 | File | Use it for |
 | --- | --- |
-| [setup-accounts.md](./setup-accounts.md) | The one-time switches only you can flip: Vercel Analytics, PostHog, uptime monitor, Search Console, Bing, social profiles, and Domain day |
+| [setup-accounts.md](./setup-accounts.md) | The one-time account settings: Vercel Analytics, PostHog and `/admin` (all done), then the uptime monitor, social profiles, Search Console, Bing and Domain day |
 | [creator-seeding.md](./creator-seeding.md) | Finding and signing the 20 seeded creators: criteria, DMs in English and Hinglish, follow-ups, weekly asks |
 | [creators.csv](./creators.csv) | The tracker for those 20 creators (open in Google Sheets) |
 | [content-calendar.md](./content-calendar.md) | 12 reel scripts for Poocho's Instagram, the carousel, WhatsApp status copy, and four build-in-public posts |
@@ -53,10 +53,12 @@ Ticked items are done and live in this change. Unticked items need your accounts
 
 ### Monitoring
 
-- [x] Vercel Web Analytics and Speed Insights in the layout → [one switch each in Vercel](./setup-accounts.md#vercel-analytics-and-speed-insights)
-- [x] PostHog with nine of the ten playbook events; askers never identified, no question text, no session replay. `push_enabled` waits until push notifications exist → [add the key](./setup-accounts.md#posthog)
-- [x] `/admin` numbers page and [saved SQL](./weekly-review.sql)
-- [x] `/api/health` for the uptime monitor → [set up UptimeRobot](./setup-accounts.md#uptime-monitor)
+- [x] Vercel Web Analytics and Speed Insights, switched on and live in production
+- [x] PostHog live in production with nine of the ten playbook events; askers never identified, no question text, no session replay, client IPs discarded. `push_enabled` waits until push notifications exist
+- [x] PostHog [launch dashboard](https://us.posthog.com/project/698222/dashboard/2280231): north star, share channels, sign-up funnel, viral loop, retention, filtered questions
+- [x] `/admin` numbers page, open to the founder's account, and [saved SQL](./weekly-review.sql)
+- [x] `/api/health` for the uptime monitor
+- [ ] UptimeRobot watching `/`, `/@demo` and `/api/health` → [steps](./setup-accounts.md#uptime-monitor)
 - [ ] Sentry: optional, needs your Sentry account → [notes](./setup-accounts.md#sentry-optional)
 - [x] Privacy copy on `/pledge#analytics` names every analytics tool
 
@@ -102,4 +104,4 @@ The north-star metric is **weekly shared answers**. These targets are the playbo
 
 ## The Monday review (15 minutes)
 
-Open `/admin` and copy the six tiles into the KPI table. In Vercel Analytics, note visitors, top referrers and the UTM campaigns that brought them. In PostHog, read the signup funnel (`signup_started` → `signup_completed`), the viral funnel (`ask_page_cta_clicked` → `signup_completed`) and D7 retention. In Search Console, note clicks, impressions and newly indexed pages. Check UptimeRobot for any downtime. Then write one build-in-public post from those numbers, using the template in [content-calendar.md](./content-calendar.md#build-in-public).
+Open `/admin` and copy the six tiles into the KPI table. In Vercel Analytics, note visitors, top referrers and the UTM campaigns that brought them. In the [PostHog launch dashboard](https://us.posthog.com/project/698222/dashboard/2280231), read the sign-up funnel, the viral loop and weekly retention. In Search Console, note clicks, impressions and newly indexed pages. Check UptimeRobot for any downtime. Then write one build-in-public post from those numbers, using the template in [content-calendar.md](./content-calendar.md#build-in-public).

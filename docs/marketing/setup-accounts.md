@@ -4,24 +4,17 @@ The code for every item below is already in the app. Each step here is a setting
 
 ## Vercel Analytics and Speed Insights
 
-The app now loads `<Analytics />` and `<SpeedInsights />`, but Vercel only starts recording once each product is switched on for the project.
-
-1. Open Vercel → **ask-me-anything** → **Analytics** → **Enable**.
-2. Open **Speed Insights** → **Enable**.
-3. Redeploy production (or merge this change, which redeploys it).
+**Done on 30 October 2026.** Both are switched on for **ask-me-anything**, and the production build loads their scripts. Read them in Vercel → **ask-me-anything** → **Analytics** and **Speed Insights**.
 
 Neither uses cookies, so no cookie banner is needed. Vercel Web Analytics shows UTM parameters, so the tagged links in [utm-links.md](./utm-links.md) show up by campaign. On the Hobby plan, check Vercel's current event limits and its non-commercial-use terms; move to Pro before any paid feature launches, as the playbook notes.
 
 ## PostHog
 
-1. Create a free project at posthog.com. Choose the **EU** or **US** cloud; the app defaults to US.
-2. In **Project settings**, turn on **Discard client IP data**. Askers' events already carry no browser ID, cookie or person; this keeps the server's IP out of PostHog too.
-3. In Vercel → **Settings** → **Environment Variables**, add for Production and Preview:
-   - `NEXT_PUBLIC_POSTHOG_KEY` = your project API key (starts with `phc_`)
-   - `NEXT_PUBLIC_POSTHOG_HOST` = `https://us.i.posthog.com` (or `https://eu.i.posthog.com`)
-4. Redeploy.
+**Done on 30 October 2026.** The project runs on PostHog's US cloud, and the production build loads it with the privacy settings in `lib/analytics.ts`.
 
-Without the key, PostHog never loads, so nothing breaks before you do this.
+- **Discard client IP data** is on. Askers' events already carry no browser ID, cookie or person, and this keeps IP addresses out of PostHog too. PostHog still works out country and city before it discards the IP, so the city split in [paid-ads-test.md](./paid-ads-test.md) still works.
+- `NEXT_PUBLIC_POSTHOG_KEY` and `NEXT_PUBLIC_POSTHOG_HOST` are set for **Production only**. Preview deploys have no key, so they never load PostHog, and test clicks never mix with real numbers. Without the key, the app simply skips PostHog.
+- The [Poocho launch dashboard](https://us.posthog.com/project/698222/dashboard/2280231) is pinned in the project. It stays empty until real visitors arrive.
 
 **Events the app sends**
 
@@ -39,11 +32,16 @@ Without the key, PostHog never loads, so nothing breaks before you do this.
 
 `push_enabled`, the playbook's tenth event, will be added with push notifications, which aren't built yet.
 
-**Three saved insights to create**
+**What the launch dashboard shows**
 
-1. Funnel: `signup_started` → `signup_completed`, broken down by `$initial_utm_source`.
-2. Funnel: `$pageview` where the URL contains `/@` → `ask_page_cta_clicked` → `signup_completed`. This is the viral conversion KPI.
-3. Retention: identified users, `signup_completed` then any event, weekly, to read D7.
+| Chart | What it answers |
+| --- | --- |
+| Weekly shared answers | The north star: `answer_published` plus `card_shared`, by week |
+| Links shared by channel | `link_shared` split by share sheet, download and copy |
+| Sign-up funnel by first source | `signup_started` → `signup_completed`, by `$initial_utm_source` |
+| Viral loop: ask page to new host | An `/@` page view → `ask_page_cta_clicked` → `signup_completed`. This is the viral conversion KPI |
+| Host retention (weekly) | New hosts who came back, read at week 1 for D7 |
+| Questions sent and filtered | `question_sent` and `question_filtered` by day |
 
 ## Uptime monitor
 
@@ -55,11 +53,9 @@ Without the key, PostHog never loads, so nothing breaks before you do this.
 
 ## The admin numbers page
 
-`/admin` shows this week's hosts, answers, activation, active hosts, questions, filtered share and indexable profiles, plus a tagged-link builder. It's limited to Clerk user IDs you list:
+`/admin` shows this week's hosts, answers, activation, active hosts, questions, filtered share and indexable profiles, plus a tagged-link builder. It's limited to the Clerk user IDs in `ADMIN_USER_IDS`.
 
-1. In the Clerk dashboard → **Users**, open your own user and copy the ID (starts with `user_`).
-2. In Vercel, add `ADMIN_USER_IDS` = that ID (comma-separate more than one) for Production.
-3. Redeploy and open `https://poocho.vercel.app/admin` while signed in.
+**Done on 30 October 2026** for the founder's account: open `https://poocho.vercel.app/admin` while signed in. To let someone else in, copy their ID from Clerk → **Users** (it starts with `user_`), add it to `ADMIN_USER_IDS` in Vercel after a comma, and redeploy.
 
 Everyone else gets a 404. The same numbers are in [weekly-review.sql](./weekly-review.sql) for the Neon SQL editor.
 
