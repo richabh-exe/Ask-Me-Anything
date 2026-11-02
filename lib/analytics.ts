@@ -14,6 +14,10 @@ import type { TemplateId } from "./types";
  *   nothing on screen (questions in the inbox included) can leak into events.
  * - The anonymous ID lives in sessionStorage: it survives the Google sign-in
  *   redirect, so the signup funnel holds together, then disappears with the tab.
+ * - Uncaught errors go to PostHog error tracking, but every report passes
+ *   through lib/error-scrub.ts first, which cuts out anything that could be
+ *   someone's text: messages lose quoted strings and everything past the
+ *   first line, and URLs lose their query strings.
  *
  * Events go to /chai on our own domain, which next.config.ts rewrites to
  * PostHog. The data is the same; tracking blockers just don't drop it.
@@ -37,11 +41,19 @@ const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const UI_HOST = (process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com").replace(".i.posthog.com", ".posthog.com");
 
 let client: Promise<PostHog | null> | undefined;
+// Errors thrown before PostHog has loaded (instrumentation-client.ts), sent once it has.
+let early: unknown[] | null = [];
 
 function posthog(): Promise<PostHog | null> {
   if (!KEY || typeof window === "undefined") return Promise.resolve(null);
-  client ??= import("posthog-js")
-    .then(({ default: ph }) => {
+  client ??= Promise.all([
+    import("posthog-js"),
+    // The SDK fetches its error hooks from PostHog's CDN, which external loading
+    // (off below) forbids. Bundling them makes exception capture work anyway.
+    import("posthog-js/dist/exception-autocapture"),
+    import("./error-scrub"),
+  ])
+    .then(([{ default: ph }, , { scrubExceptionEvent }]) => {
       ph.init(KEY, {
         api_host: "/chai",
         ui_host: UI_HOST,
@@ -61,11 +73,28 @@ function posthog(): Promise<PostHog | null> {
         disable_web_experiments: true,
         disable_external_dependency_loading: true,
         mask_all_text: true,
+        // console.error is left alone: libraries log whatever they like there.
+        capture_exceptions: { capture_unhandled_errors: true, capture_unhandled_rejections: true, capture_console_errors: false },
+        error_tracking: { exception_steps: { enabled: false } },
+        before_send: (event) => {
+          if (event?.event !== "$exception") return event;
+          // An error report never updates a person profile.
+          return { uuid: event.uuid, event: event.event, timestamp: event.timestamp, properties: scrubExceptionEvent(event.properties) };
+        },
       });
+      for (const error of early ?? []) ph.captureException(error);
+      early = null;
       return ph;
     })
     .catch(() => null);
   return client;
+}
+
+/** Holds an error thrown before PostHog started, and starts it, so a crash on first paint is still reported. */
+export function reportEarlyError(error: unknown) {
+  if (!KEY || !early || early.length >= 10) return;
+  early.push(error);
+  void posthog();
 }
 
 /** Starts PostHog after the page is idle, so it never competes with first paint. */
