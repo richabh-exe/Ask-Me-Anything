@@ -16,12 +16,11 @@ const redirectVercelHost = process.env.VERCEL_ENV === "production" && canonical 
 
 export default clerkMiddleware(async (auth, request) => {
   // next.config.ts turns off Next.js's own trailing-slash redirect for PostHog,
-  // so pages keep a single URL here instead: /pledge/ → /pledge.
-  const { pathname } = request.nextUrl;
+  // so pages keep a single URL here instead: /pledge/ → /pledge. A plain URL,
+  // because a cloned nextUrl remembers the slash and puts it back.
+  const { pathname, search } = request.nextUrl;
   if (pathname.length > 1 && pathname.endsWith("/")) {
-    const target = request.nextUrl.clone();
-    target.pathname = pathname.replace(/\/+$/, "") || "/";
-    return NextResponse.redirect(target, 308);
+    return NextResponse.redirect(new URL((pathname.replace(/\/+$/, "") || "/") + search, request.url), 308);
   }
   if (redirectVercelHost && canonical && request.nextUrl.hostname.endsWith(".vercel.app")) {
     const target = new URL(request.nextUrl.pathname + request.nextUrl.search, canonical);
