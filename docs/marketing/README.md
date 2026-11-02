@@ -60,7 +60,7 @@ Ticked items are done and live in this change. Unticked items need your accounts
 - [x] `/admin` numbers page, open to the founder's account, and [saved SQL](./weekly-review.sql)
 - [x] `/api/health` for the uptime monitor
 - [ ] UptimeRobot watching `/`, `/@demo` and `/api/health` → [steps](./setup-accounts.md#uptime-monitor)
-- [ ] Sentry: optional, needs your Sentry account → [notes](./setup-accounts.md#sentry-optional)
+- [x] Error tracking in PostHog for browser and server errors, scrubbed of question and answer text; replaces the optional Sentry item → [details](./setup-accounts.md#posthog)
 - [x] Privacy copy on `/pledge#analytics` names every analytics tool
 
 ### Marketing

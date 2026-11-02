@@ -104,8 +104,9 @@ export default function PledgePage() {
                       <li>
                         <strong>PostHog</strong> records a few product events, such as a link being shared or an answer being published.
                         Hosts are linked to their account ID after they sign up. People asking questions are never identified: those events
-                        are sent from our server with a random ID, and no question or answer text is ever included. Session recording is
-                        off.
+                        are sent from our server with a random ID, and no question or answer text is ever included. PostHog also records
+                        error reports when something breaks, so we can fix it. They carry no question or answer text either: anything that
+                        could be someone&apos;s words is cut out before a report is sent. Session recording is off.
                       </li>
                     </ul>
                     <p>There are no advertising trackers or pixels anywhere on Poocho, and we don&apos;t sell data.</p>

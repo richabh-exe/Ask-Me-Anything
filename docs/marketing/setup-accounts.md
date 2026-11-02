@@ -25,6 +25,16 @@ Neither uses cookies, so no cookie banner is needed. Vercel Web Analytics shows 
 - The founder's account is marked as an internal user, and the five host charts on the launch dashboard leave internal users out. New insights leave them out by default. To leave out a teammate, open their person in PostHog and set `$internal_or_test_user` to `true`.
 - All nine events below are listed in PostHog's **Data management** with the same descriptions, tags and the founder as owner, so they show up described even before they first fire.
 
+**Error tracking, switched on 2 November 2026**
+
+PostHog error tracking replaces the optional Sentry item. Read errors in PostHog → **Error tracking**, where they're grouped into issues.
+
+- **Browser errors.** Uncaught errors and rejected promises are captured, including a crash on first paint or a hydration mismatch before PostHog has loaded (`instrumentation-client.ts` holds those and sends them once it arrives). `console.error` is not captured. The capture code is bundled with the app, because PostHog normally fetches it from its CDN and our setup blocks that.
+- **Server errors.** Server actions, route handlers, page rendering and the proxy report through `onRequestError` in `instrumentation.ts`. Each report is sent like an asker event: a random ID, no person, no URL, cookies or headers, only the route's file path (such as `/u/[handle]`) and a `digest` that matches the one on the error page.
+- **No question or answer text, by construction.** Every report goes through `lib/error-scrub.ts`. Messages keep only their first line, so a failed database query's parameters never go out, and lose quoted strings, URL queries, email addresses and any Hindi or other non-ASCII text. A thrown value that isn't an Error loses its message entirely. Stack frames keep only file, function, line and column, URLs lose their query strings, and breadcrumbs are dropped. `tests/error-scrub.test.ts` checks this against real JSON.parse and database errors.
+- **Exception autocapture** is on in the project's Error tracking settings. The app switches capture on in `lib/analytics.ts` itself, so turning that setting off doesn't stop it: change the code instead. To mute a noisy error, add a suppression rule in PostHog.
+- **Stack traces are minified.** Source maps aren't uploaded yet, so frames point into built files. The messages, types and routes are usually enough to find the line. To get readable frames later, add PostHog's source map upload to the Vercel build, which needs a personal API key stored in Vercel.
+
 **Events the app sends**
 
 | Event | Properties | Fired when |
@@ -109,10 +119,6 @@ Run PageSpeed Insights (pagespeed.web.dev) on the homepage and `/@demo` with the
 5. At bing.com/webmasters, sign in and choose **Import from Google Search Console**. Bing's index also feeds DuckDuckGo, Yahoo and several AI assistants.
 
 IndexNow is already wired: its key file is live, and pings start automatically once the site runs on poocho.app.
-
-## Sentry (optional)
-
-Error tracking needs a Sentry account and DSN. When you're ready, run `npx @sentry/wizard@latest -i nextjs` on a branch, add `SENTRY_DSN` in Vercel, and check that the build still passes with Cache Components. It isn't part of this change because it needs your account and adds a build step.
 
 ## Domain day
 
