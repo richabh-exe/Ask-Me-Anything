@@ -15,6 +15,14 @@ const canonical = process.env.NEXT_PUBLIC_SITE_URL ? new URL(process.env.NEXT_PU
 const redirectVercelHost = process.env.VERCEL_ENV === "production" && canonical !== null && !canonical.hostname.endsWith(".vercel.app");
 
 export default clerkMiddleware(async (auth, request) => {
+  // next.config.ts turns off Next.js's own trailing-slash redirect for PostHog,
+  // so pages keep a single URL here instead: /pledge/ → /pledge.
+  const { pathname } = request.nextUrl;
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    const target = request.nextUrl.clone();
+    target.pathname = pathname.replace(/\/+$/, "") || "/";
+    return NextResponse.redirect(target, 308);
+  }
   if (redirectVercelHost && canonical && request.nextUrl.hostname.endsWith(".vercel.app")) {
     const target = new URL(request.nextUrl.pathname + request.nextUrl.search, canonical);
     return NextResponse.redirect(target, 308);
@@ -24,8 +32,9 @@ export default clerkMiddleware(async (auth, request) => {
 
 export const config = {
   matcher: [
-    // Skip Next.js internals and static files, unless found in search params.
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Skip Next.js internals, the PostHog relay (next.config.ts) and static files,
+    // unless found in search params.
+    "/((?!_next|chai/|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     // Always run for API routes.
     "/(api|trpc)(.*)",
     // Always run for Clerk's Frontend API proxy. Production on *.vercel.app loads

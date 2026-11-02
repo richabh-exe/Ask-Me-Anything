@@ -56,6 +56,7 @@ Ticked items are done and live in this change. Unticked items need your accounts
 - [x] Vercel Web Analytics and Speed Insights, switched on and live in production
 - [x] PostHog live in production with nine of the ten playbook events; askers never identified, no question text, no session replay, client IPs discarded. `push_enabled` waits until push notifications exist
 - [x] PostHog [launch dashboard](https://us.posthog.com/project/698222/dashboard/2280231): north star, share channels, sign-up funnel, viral loop, retention, filtered questions
+- [x] PostHog relayed through `/chai` on our own domain so blockers don't drop events, India time and Monday weeks, internal users left out of the launch charts → [details](./setup-accounts.md#posthog)
 - [x] `/admin` numbers page, open to the founder's account, and [saved SQL](./weekly-review.sql)
 - [x] `/api/health` for the uptime monitor
 - [ ] UptimeRobot watching `/`, `/@demo` and `/api/health` → [steps](./setup-accounts.md#uptime-monitor)
