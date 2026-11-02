@@ -15,6 +15,15 @@ Neither uses cookies, so no cookie banner is needed. Vercel Web Analytics shows 
 - **Discard client IP data** is on. Askers' events already carry no browser ID, cookie or person, and this keeps IP addresses out of PostHog too. PostHog still works out country and city before it discards the IP, so the city split in [paid-ads-test.md](./paid-ads-test.md) still works.
 - `NEXT_PUBLIC_POSTHOG_KEY` and `NEXT_PUBLIC_POSTHOG_HOST` are set for **Production only**. Preview deploys have no key, so they never load PostHog, and test clicks never mix with real numbers. Without the key, the app simply skips PostHog.
 - The [Poocho launch dashboard](https://us.posthog.com/project/698222/dashboard/2280231) is pinned in the project. It stays empty until real visitors arrive.
+- **Events go through Poocho's own domain.** The browser sends them to `/chai`, which `next.config.ts` relays to PostHog, so tracking blockers don't drop host events. Nothing extra is collected. Asker events already go from our server to PostHog directly.
+
+**Project settings, tidied on 2 November 2026**
+
+- The project is named **Poocho**, reports in **Asia/Kolkata** time, and starts weeks on Monday, so daily and weekly charts match Indian days and the Monday review.
+- The launch dashboard is the project's home dashboard.
+- Session replay, console logs and network timing are off in the project too, not only in the app, to match the pledge.
+- The founder's account is marked as an internal user, and the five host charts on the launch dashboard leave internal users out. New insights leave them out by default. To leave out a teammate, open their person in PostHog and set `$internal_or_test_user` to `true`.
+- All nine events below are listed in PostHog's **Data management** with the same descriptions, tags and the founder as owner, so they show up described even before they first fire.
 
 **Events the app sends**
 

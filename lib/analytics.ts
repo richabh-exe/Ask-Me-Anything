@@ -14,6 +14,9 @@ import type { TemplateId } from "./types";
  *   nothing on screen (questions in the inbox included) can leak into events.
  * - The anonymous ID lives in sessionStorage: it survives the Google sign-in
  *   redirect, so the signup funnel holds together, then disappears with the tab.
+ *
+ * Events go to /chai on our own domain, which next.config.ts rewrites to
+ * PostHog. The data is the same; tracking blockers just don't drop it.
  */
 
 export type ShareChannel = "share_sheet" | "download" | "copy";
@@ -30,7 +33,8 @@ interface Events {
 }
 
 const KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-const HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com";
+// The PostHog app itself (us.posthog.com), for the links the SDK builds.
+const UI_HOST = (process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com").replace(".i.posthog.com", ".posthog.com");
 
 let client: Promise<PostHog | null> | undefined;
 
@@ -39,8 +43,9 @@ function posthog(): Promise<PostHog | null> {
   client ??= import("posthog-js")
     .then(({ default: ph }) => {
       ph.init(KEY, {
-        api_host: HOST,
-        defaults: "2026-01-30",
+        api_host: "/chai",
+        ui_host: UI_HOST,
+        defaults: "2026-08-30",
         person_profiles: "identified_only",
         persistence: "sessionStorage",
         capture_pageview: "history_change",
