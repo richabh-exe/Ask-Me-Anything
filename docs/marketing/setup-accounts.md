@@ -23,6 +23,7 @@ Neither uses cookies, so no cookie banner is needed. Vercel Web Analytics shows 
 - The launch dashboard is the project's home dashboard.
 - Session replay, console logs and network timing are off in the project too, not only in the app, to match the pledge.
 - The founder's account is marked as an internal user, and the five host charts on the launch dashboard leave internal users out. New insights leave them out by default. To leave out a teammate, open their person in PostHog and set `$internal_or_test_user` to `true`.
+- All nine events below are listed in PostHog's **Data management** with the same descriptions, tags and the founder as owner, so they show up described even before they first fire.
 
 **Events the app sends**
 
